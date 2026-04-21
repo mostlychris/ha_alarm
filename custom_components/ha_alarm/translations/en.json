@@ -1,0 +1,103 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set Up HA Alarm",
+        "description": "Create your alarm panel. Sensors and notification targets can be configured after setup.",
+        "data": {
+          "name": "Alarm Panel Name",
+          "admin_name": "Admin User Name",
+          "admin_code": "Admin Code (min. 4 digits)"
+        }
+      }
+    },
+    "error": {
+      "code_too_short": "Code must be at least 4 digits."
+    },
+    "abort": {
+      "already_configured": "Alarm panel is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HA Alarm Options",
+        "menu_options": {
+          "sensors": "Configure Sensors",
+          "delays": "Configure Entry / Exit Delays",
+          "codes": "Manage User Codes",
+          "notifications": "Configure Notifications"
+        }
+      },
+      "sensors": {
+        "title": "Configure Sensors",
+        "description": "Select which binary sensors are active in each arm mode.",
+        "data": {
+          "armed_away": "Away Mode Sensors",
+          "armed_home": "Home Mode Sensors",
+          "armed_night": "Night Mode Sensors",
+          "armed_vacation": "Vacation Mode Sensors",
+          "armed_custom_bypass": "Custom Mode Sensors"
+        }
+      },
+      "delays": {
+        "title": "Entry / Exit Delays",
+        "description": "Set entry and exit delays (seconds) per arm mode. Set to 0 for instant arming/triggering.",
+        "data": {
+          "armed_away_entry": "Away — Entry Delay",
+          "armed_away_exit": "Away — Exit Delay",
+          "armed_home_entry": "Home — Entry Delay",
+          "armed_home_exit": "Home — Exit Delay",
+          "armed_night_entry": "Night — Entry Delay",
+          "armed_night_exit": "Night — Exit Delay",
+          "armed_vacation_entry": "Vacation — Entry Delay",
+          "armed_vacation_exit": "Vacation — Exit Delay",
+          "armed_custom_bypass_entry": "Custom — Entry Delay",
+          "armed_custom_bypass_exit": "Custom — Exit Delay"
+        }
+      },
+      "codes": {
+        "title": "Manage User Codes",
+        "menu_options": {
+          "add_code": "Add a User",
+          "remove_code": "Remove a User"
+        }
+      },
+      "add_code": {
+        "title": "Add User",
+        "data": {
+          "name": "User Name",
+          "code": "Code (min. 4 digits)",
+          "is_admin": "Admin (can arm, disarm, and manage settings)"
+        }
+      },
+      "remove_code": {
+        "title": "Remove User",
+        "description": "Select the user to remove. The last admin cannot be removed.",
+        "data": {
+          "name": "User Name"
+        }
+      },
+      "notifications": {
+        "title": "Configure Notifications",
+        "description": "Enter notify service targets as a comma-separated list (e.g. notify.mobile_app_my_phone, notify.my_group). Toggle which events trigger a notification.",
+        "data": {
+          "targets": "Notification Targets",
+          "event_arming": "Notify when arming (exit delay countdown)",
+          "event_armed": "Notify when armed",
+          "event_triggered": "Notify when alarm triggers",
+          "event_disarmed": "Notify when disarmed",
+          "event_disarming": "Notify when disarming",
+          "event_pending": "Notify on entry delay (pending)",
+          "event_failed": "Notify on invalid code attempt"
+        }
+      }
+    },
+    "error": {
+      "code_too_short": "Code must be at least 4 digits.",
+      "name_required": "User name is required.",
+      "name_exists": "A user with that name already exists.",
+      "last_admin": "Cannot remove the last admin user."
+    }
+  }
+}
