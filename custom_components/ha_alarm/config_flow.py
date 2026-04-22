@@ -24,6 +24,9 @@ from homeassistant.helpers.selector import (
 from .const import (
     ALL_EVENTS,
     ALL_MODES,
+    CONF_BYPASSED_SENSORS,
+    CONF_CHIME_MODE,
+    CONF_CHIME_SENSORS,
     CONF_CODE_ARM_REQUIRED,
     CONF_CODE_IS_ADMIN,
     CONF_CODE_NAME,
@@ -31,13 +34,14 @@ from .const import (
     CONF_CODE_VALUE,
     CONF_CODES,
     CONF_DELAYS,
+    CONF_DISARM_AFTER_TRIGGER,
     CONF_ENTRY_DELAY,
     CONF_EXIT_DELAY,
     CONF_NOTIFICATIONS,
     CONF_NOTIFY_EVENTS,
     CONF_NOTIFY_TARGETS,
-    CONF_DISARM_AFTER_TRIGGER,
     CONF_SENSORS,
+    CONF_SIREN_ENTITY,
     CONF_TRIGGER_TIME,
     DEFAULT_ENTRY_DELAY,
     DEFAULT_EXIT_DELAY,
@@ -79,6 +83,10 @@ def _default_data(admin_name: str, raw_code: str) -> dict[str, Any]:
         CONF_CODE_ARM_REQUIRED: True,
         CONF_TRIGGER_TIME: DEFAULT_TRIGGER_TIME,
         CONF_DISARM_AFTER_TRIGGER: False,
+        CONF_SIREN_ENTITY: "",
+        CONF_CHIME_MODE: False,
+        CONF_CHIME_SENSORS: [],
+        CONF_BYPASSED_SENSORS: {},
     }
 
 
@@ -147,7 +155,7 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.FlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["sensors", "delays", "codes", "notifications", "general"],
+            menu_options=["sensors", "delays", "codes", "notifications", "chime", "general"],
         )
 
     # ------------------------------------------------------------ sensors
@@ -347,6 +355,32 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
             data_schema=vol.Schema(schema_dict),
         )
 
+    # --------------------------------------------------------------- chime
+
+    async def async_step_chime(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        if user_input is not None:
+            self._opts[CONF_CHIME_MODE] = user_input[CONF_CHIME_MODE]
+            self._opts[CONF_CHIME_SENSORS] = user_input.get(CONF_CHIME_SENSORS, [])
+            return self.async_create_entry(title="", data=self._opts)
+
+        return self.async_show_form(
+            step_id="chime",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CHIME_MODE,
+                        default=self._opts.get(CONF_CHIME_MODE, False),
+                    ): BooleanSelector(),
+                    vol.Optional(
+                        CONF_CHIME_SENSORS,
+                        default=self._opts.get(CONF_CHIME_SENSORS, []),
+                    ): _BINARY_SENSOR_SEL,
+                }
+            ),
+        )
+
     # ------------------------------------------------------------- general
 
     async def async_step_general(
@@ -356,6 +390,7 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
             self._opts[CONF_CODE_ARM_REQUIRED] = user_input[CONF_CODE_ARM_REQUIRED]
             self._opts[CONF_TRIGGER_TIME] = int(user_input[CONF_TRIGGER_TIME])
             self._opts[CONF_DISARM_AFTER_TRIGGER] = user_input[CONF_DISARM_AFTER_TRIGGER]
+            self._opts[CONF_SIREN_ENTITY] = user_input.get(CONF_SIREN_ENTITY) or ""
             return self.async_create_entry(title="", data=self._opts)
 
         return self.async_show_form(
@@ -376,6 +411,12 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
                         CONF_DISARM_AFTER_TRIGGER,
                         default=self._opts.get(CONF_DISARM_AFTER_TRIGGER, False),
                     ): BooleanSelector(),
+                    vol.Optional(
+                        CONF_SIREN_ENTITY,
+                        default=self._opts.get(CONF_SIREN_ENTITY, ""),
+                    ): EntitySelector(EntitySelectorConfig(
+                        domain=["switch", "script", "input_boolean", "siren"],
+                    )),
                 }
             ),
         )

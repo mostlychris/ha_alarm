@@ -8,8 +8,11 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, PLATFORM
+from .const import API_UPDATE_FLAG, DOMAIN, PLATFORM
 from .http_views import (
+    HaAlarmBypassAddView,
+    HaAlarmBypassRemoveView,
+    HaAlarmChimeView,
     HaAlarmCodesAddView,
     HaAlarmCodesRemoveView,
     HaAlarmConfigView,
@@ -25,7 +28,6 @@ _PANEL_URL = "ha-alarm"
 _STATIC_URL = "/ha_alarm_static"
 _PANEL_KEY = "panel_registered"
 _HTTP_KEY = "http_registered"
-_API_UPDATE_FLAG = "api_update"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -34,7 +36,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
-    # Register static file serving once per HA lifetime
     if not hass.data[DOMAIN].get(_HTTP_KEY):
         frontend_path = Path(__file__).parent / "frontend"
         await hass.http.async_register_static_paths([
@@ -46,11 +47,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.http.register_view(HaAlarmDelaysView())
         hass.http.register_view(HaAlarmNotificationsView())
         hass.http.register_view(HaAlarmGeneralView())
+        hass.http.register_view(HaAlarmChimeView())
+        hass.http.register_view(HaAlarmBypassAddView())
+        hass.http.register_view(HaAlarmBypassRemoveView())
         hass.http.register_view(HaAlarmCodesAddView())
         hass.http.register_view(HaAlarmCodesRemoveView())
         hass.data[DOMAIN][_HTTP_KEY] = True
 
-    # Register sidebar panel once per HA lifetime
     if not hass.data[DOMAIN].get(_PANEL_KEY):
         await panel_custom.async_register_panel(
             hass,
@@ -76,7 +79,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    # API saves set this flag so they don't cause a full reload
-    if hass.data.get(DOMAIN, {}).pop(_API_UPDATE_FLAG, False):
+    if hass.data.get(DOMAIN, {}).pop(API_UPDATE_FLAG, False):
         return
     await hass.config_entries.async_reload(entry.entry_id)

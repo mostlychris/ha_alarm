@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import time
 from typing import Any
 
 from homeassistant.components.alarm_control_panel import (
@@ -18,23 +19,31 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
+    API_UPDATE_FLAG,
+    BYPASS_INDEFINITE,
+    BYPASS_ONE_CYCLE,
+    CONF_BYPASSED_SENSORS,
+    CONF_CHIME_MODE,
+    CONF_CHIME_SENSORS,
     CONF_CODE_ARM_REQUIRED,
     CONF_CODE_IS_ADMIN,
     CONF_CODE_SALT,
     CONF_CODE_VALUE,
     CONF_CODES,
     CONF_DELAYS,
+    CONF_DISARM_AFTER_TRIGGER,
     CONF_ENTRY_DELAY,
     CONF_EXIT_DELAY,
     CONF_NOTIFICATIONS,
     CONF_NOTIFY_EVENTS,
     CONF_NOTIFY_TARGETS,
-    CONF_DISARM_AFTER_TRIGGER,
     CONF_SENSORS,
+    CONF_SIREN_ENTITY,
     CONF_TRIGGER_TIME,
     DEFAULT_ENTRY_DELAY,
     DEFAULT_EXIT_DELAY,
     DEFAULT_TRIGGER_TIME,
+    DOMAIN,
     EVENT_ARMED,
     EVENT_ARMING,
     EVENT_DISARMED,
@@ -61,7 +70,6 @@ MODE_TO_STATE: dict[str, AlarmControlPanelState] = {
 
 ARMED_STATES = frozenset(MODE_TO_STATE.values())
 
-# Transient states lost on restart — reset to disarmed
 _TRANSIENT_STATES = {
     AlarmControlPanelState.ARMING,
     AlarmControlPanelState.PENDING,
@@ -103,6 +111,7 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         self._armed_mode: str | None = None
         self._timer: asyncio.TimerHandle | None = None
         self._unsub_sensors: list = []
+        self._unsub_chime: list = []
 
     # ------------------------------------------------------------------ state
 
@@ -116,23 +125,50 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {"armed_mode": self._armed_mode}
+        return {
+            "armed_mode": self._armed_mode,
+            "bypassed_sensors": list(self._active_bypasses()),
+        }
 
     # ---------------------------------------------------------------- helpers
 
     def _cfg(self) -> dict[str, Any]:
-        """Merged config: options override initial data."""
         return {**self._entry.data, **self._entry.options}
 
     def _sensors_for_mode(self, mode: str) -> list[str]:
-        return self._cfg().get(CONF_SENSORS, {}).get(mode, [])
+        all_sensors = self._cfg().get(CONF_SENSORS, {}).get(mode, [])
+        bypassed = self._active_bypasses()
+        return [s for s in all_sensors if s not in bypassed]
+
+    def _active_bypasses(self) -> set[str]:
+        now = time.time()
+        result: set[str] = set()
+        for sid, until in self._cfg().get(CONF_BYPASSED_SENSORS, {}).items():
+            if until == BYPASS_ONE_CYCLE or until == BYPASS_INDEFINITE or until > now:
+                result.add(sid)
+        return result
+
+    def _clear_cycle_bypasses(self) -> None:
+        """Remove one-cycle and expired bypasses after disarm."""
+        now = time.time()
+        bypasses = dict(self._cfg().get(CONF_BYPASSED_SENSORS, {}))
+        to_del = [
+            sid for sid, until in bypasses.items()
+            if until == BYPASS_ONE_CYCLE or (until != BYPASS_INDEFINITE and until < now)
+        ]
+        if not to_del:
+            return
+        for sid in to_del:
+            del bypasses[sid]
+        new_opts = {**self._entry.options, CONF_BYPASSED_SENSORS: bypasses}
+        self.hass.data.setdefault(DOMAIN, {})[API_UPDATE_FLAG] = True
+        self.hass.config_entries.async_update_entry(self._entry, options=new_opts)
 
     def _delay(self, mode: str, delay_key: str) -> int:
         default = DEFAULT_ENTRY_DELAY if delay_key == CONF_ENTRY_DELAY else DEFAULT_EXIT_DELAY
         return self._cfg().get(CONF_DELAYS, {}).get(mode, {}).get(delay_key, default)
 
     def _validate_code(self, code: str) -> tuple[bool, bool]:
-        """Return (valid, is_admin)."""
         for user in self._cfg().get(CONF_CODES, []):
             salt = user.get(CONF_CODE_SALT, "")
             if _hash_code(code, salt) == user.get(CONF_CODE_VALUE, ""):
@@ -155,6 +191,70 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         for unsub in self._unsub_sensors:
             unsub()
         self._unsub_sensors.clear()
+
+    # ------------------------------------------------------------ chime mode
+
+    def _subscribe_chime(self) -> None:
+        self._unsubscribe_chime()
+        if not self._cfg().get(CONF_CHIME_MODE, False):
+            return
+        sensors = self._cfg().get(CONF_CHIME_SENSORS, [])
+        if sensors:
+            self._unsub_chime.append(
+                async_track_state_change_event(
+                    self.hass, sensors, self._chime_sensor_changed
+                )
+            )
+
+    def _unsubscribe_chime(self) -> None:
+        for unsub in self._unsub_chime:
+            unsub()
+        self._unsub_chime.clear()
+
+    @callback
+    def _chime_sensor_changed(self, event: Any) -> None:
+        if self._alarm_state != AlarmControlPanelState.DISARMED:
+            return
+        new_state = event.data.get("new_state")
+        if new_state and new_state.state == "on":
+            self._notify_chime(new_state.entity_id)
+
+    def _notify_chime(self, sensor_id: str) -> None:
+        cfg = self._cfg().get(CONF_NOTIFICATIONS, {})
+        targets: list[str] = cfg.get(CONF_NOTIFY_TARGETS, [])
+        if not targets:
+            return
+        state = self.hass.states.get(sensor_id)
+        name = state.attributes.get("friendly_name", sensor_id) if state else sensor_id
+        for target in targets:
+            parts = target.split(".", 1)
+            if len(parts) == 2:
+                self.hass.async_create_task(
+                    self.hass.services.async_call(
+                        parts[0], parts[1],
+                        {"message": f"Chime: {name} opened.", "title": "HA Alarm"},
+                    )
+                )
+
+    # ----------------------------------------------------------------- siren
+
+    def _siren_on(self) -> None:
+        entity = self._cfg().get(CONF_SIREN_ENTITY, "")
+        if entity:
+            self.hass.async_create_task(
+                self.hass.services.async_call(
+                    "homeassistant", "turn_on", {"entity_id": entity}
+                )
+            )
+
+    def _siren_off(self) -> None:
+        entity = self._cfg().get(CONF_SIREN_ENTITY, "")
+        if entity:
+            self.hass.async_create_task(
+                self.hass.services.async_call(
+                    "homeassistant", "turn_off", {"entity_id": entity}
+                )
+            )
 
     # ----------------------------------------------------------------- timers
 
@@ -196,6 +296,7 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         self._unsubscribe_sensors()
         self._set_state(AlarmControlPanelState.TRIGGERED)
         self._notify(EVENT_TRIGGERED, sensor_id)
+        self._siren_on()
         trigger_time = self._cfg().get(CONF_TRIGGER_TIME, DEFAULT_TRIGGER_TIME)
         if trigger_time > 0:
             self._cancel_timer()
@@ -205,10 +306,12 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
 
     def _timer_trigger_timeout(self) -> None:
         self._timer = None
+        self._siren_off()
         if self._cfg().get(CONF_DISARM_AFTER_TRIGGER, False):
             self._armed_mode = None
             self._set_state(AlarmControlPanelState.DISARMED)
             self._notify(EVENT_DISARMED)
+            self._clear_cycle_bypasses()
         elif self._armed_mode:
             armed_state = MODE_TO_STATE.get(self._armed_mode)
             if armed_state:
@@ -229,22 +332,32 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
-        if last is None:
-            return
-        # AlarmControlPanelState is a StrEnum so comparing with last.state string works
-        try:
-            restored = AlarmControlPanelState(last.state)
-        except ValueError:
-            return
-        if restored not in _TRANSIENT_STATES:
-            self._alarm_state = restored
-            self._armed_mode = last.attributes.get("armed_mode")
-            if self._armed_mode:
-                self._subscribe_sensors(self._armed_mode)
+        if last is not None:
+            try:
+                restored = AlarmControlPanelState(last.state)
+            except ValueError:
+                pass
+            else:
+                if restored not in _TRANSIENT_STATES:
+                    self._alarm_state = restored
+                    self._armed_mode = last.attributes.get("armed_mode")
+                    if self._armed_mode:
+                        self._subscribe_sensors(self._armed_mode)
+        self._subscribe_chime()
+        # Refresh chime subscription whenever options change via API (no reload)
+        self.async_on_remove(
+            self._entry.add_update_listener(self._async_config_updated)
+        )
+
+    async def _async_config_updated(
+        self, hass: HomeAssistant, entry: ConfigEntry
+    ) -> None:
+        self._subscribe_chime()
 
     async def async_will_remove_from_hass(self) -> None:
         self._cancel_timer()
         self._unsubscribe_sensors()
+        self._unsubscribe_chime()
 
     # ---------------------------------------------------------- notifications
 
@@ -288,9 +401,11 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         self._notify(EVENT_DISARMING)
         self._cancel_timer()
         self._unsubscribe_sensors()
+        self._siren_off()
         self._armed_mode = None
         self._set_state(AlarmControlPanelState.DISARMED)
         self._notify(EVENT_DISARMED)
+        self._clear_cycle_bypasses()
 
     async def _arm(self, mode: str, code: str | None) -> None:
         if self._cfg().get(CONF_CODE_ARM_REQUIRED, True):

@@ -1,6 +1,9 @@
 DOMAIN = "ha_alarm"
 PLATFORM = "alarm_control_panel"
 
+# Shared flag so API saves don't trigger an integration reload
+API_UPDATE_FLAG = "api_update"
+
 # Arm modes (match HA state strings)
 MODE_AWAY = "armed_away"
 MODE_HOME = "armed_home"
@@ -26,6 +29,14 @@ CONF_EXIT_DELAY = "exit_delay"
 CONF_CODE_ARM_REQUIRED = "code_arm_required"
 CONF_TRIGGER_TIME = "trigger_time"
 CONF_DISARM_AFTER_TRIGGER = "disarm_after_trigger"
+CONF_SIREN_ENTITY = "siren_entity"
+
+CONF_BYPASSED_SENSORS = "bypassed_sensors"
+BYPASS_ONE_CYCLE = 0    # cleared automatically on next disarm
+BYPASS_INDEFINITE = -1  # until manually cleared
+
+CONF_CHIME_MODE = "chime_mode"
+CONF_CHIME_SENSORS = "chime_sensors"
 
 DEFAULT_TRIGGER_TIME = 600  # 10 minutes
 

@@ -1,7 +1,7 @@
 {
   "domain": "ha_alarm",
   "name": "HA Alarm",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "documentation": "https://github.com/yourusername/ha_alarm",
   "requirements": [],
   "dependencies": [],

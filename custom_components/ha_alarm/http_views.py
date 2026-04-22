@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import time
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,12 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    API_UPDATE_FLAG,
+    BYPASS_INDEFINITE,
+    BYPASS_ONE_CYCLE,
+    CONF_BYPASSED_SENSORS,
+    CONF_CHIME_MODE,
+    CONF_CHIME_SENSORS,
     CONF_CODE_ARM_REQUIRED,
     CONF_CODE_IS_ADMIN,
     CONF_CODE_NAME,
@@ -20,18 +27,16 @@ from .const import (
     CONF_DISARM_AFTER_TRIGGER,
     CONF_NOTIFICATIONS,
     CONF_SENSORS,
+    CONF_SIREN_ENTITY,
     CONF_TRIGGER_TIME,
     DEFAULT_TRIGGER_TIME,
     DOMAIN,
 )
 
-_API_UPDATE_FLAG = "api_update"
 _ICON_PATH = Path(__file__).parent / "icon.png"
 
 
 class HaAlarmIconView(HomeAssistantView):
-    """Serve icon.png at /{domain}/icon.png so HA's integrations card can find it."""
-
     url = "/ha_alarm/icon.png"
     name = "api:ha_alarm:icon"
     requires_auth = False
@@ -56,8 +61,7 @@ def _merged(entry) -> dict[str, Any]:
 
 
 def _update(hass: HomeAssistant, entry, opts: dict) -> None:
-    """Update options without triggering an integration reload."""
-    hass.data.setdefault(DOMAIN, {})[_API_UPDATE_FLAG] = True
+    hass.data.setdefault(DOMAIN, {})[API_UPDATE_FLAG] = True
     hass.config_entries.async_update_entry(entry, options=opts)
 
 
@@ -71,6 +75,20 @@ class HaAlarmConfigView(HomeAssistantView):
         if not entry:
             return self.json_message("No alarm configured", 404)
         cfg = _merged(entry)
+        now = time.time()
+        # Annotate bypass entries with human-readable expiry
+        raw_bypasses: dict = cfg.get(CONF_BYPASSED_SENSORS, {})
+        bypasses_out = {}
+        for sid, until in raw_bypasses.items():
+            if until == BYPASS_ONE_CYCLE:
+                label = "one_cycle"
+            elif until == BYPASS_INDEFINITE:
+                label = "indefinite"
+            elif until > now:
+                label = int(until)
+            else:
+                continue  # expired — skip
+            bypasses_out[sid] = label
         return self.json({
             "entry_title": entry.title,
             "codes": [
@@ -83,6 +101,10 @@ class HaAlarmConfigView(HomeAssistantView):
             "code_arm_required": cfg.get(CONF_CODE_ARM_REQUIRED, True),
             "trigger_time": cfg.get(CONF_TRIGGER_TIME, DEFAULT_TRIGGER_TIME),
             "disarm_after_trigger": cfg.get(CONF_DISARM_AFTER_TRIGGER, False),
+            "siren_entity": cfg.get(CONF_SIREN_ENTITY, ""),
+            "chime_mode": cfg.get(CONF_CHIME_MODE, False),
+            "chime_sensors": cfg.get(CONF_CHIME_SENSORS, []),
+            "bypassed_sensors": bypasses_out,
         })
 
 
@@ -145,6 +167,69 @@ class HaAlarmGeneralView(HomeAssistantView):
         opts[CONF_CODE_ARM_REQUIRED] = bool(data.get("code_arm_required", True))
         opts[CONF_TRIGGER_TIME] = int(data.get("trigger_time", DEFAULT_TRIGGER_TIME))
         opts[CONF_DISARM_AFTER_TRIGGER] = bool(data.get("disarm_after_trigger", False))
+        opts[CONF_SIREN_ENTITY] = str(data.get("siren_entity", ""))
+        _update(hass, entry, opts)
+        return self.json({"ok": True})
+
+
+class HaAlarmChimeView(HomeAssistantView):
+    url = "/api/ha_alarm/chime"
+    name = "api:ha_alarm:chime"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass = request.app["hass"]
+        entry = _get_entry(hass)
+        if not entry:
+            return self.json_message("No alarm configured", 404)
+        data = await request.json()
+        opts = _merged(entry)
+        opts[CONF_CHIME_MODE] = bool(data.get("chime_mode", False))
+        opts[CONF_CHIME_SENSORS] = list(data.get("chime_sensors", []))
+        _update(hass, entry, opts)
+        return self.json({"ok": True})
+
+
+class HaAlarmBypassAddView(HomeAssistantView):
+    url = "/api/ha_alarm/bypass/add"
+    name = "api:ha_alarm:bypass:add"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass = request.app["hass"]
+        entry = _get_entry(hass)
+        if not entry:
+            return self.json_message("No alarm configured", 404)
+        data = await request.json()
+        sensor_id = data.get("sensor_id", "").strip()
+        if not sensor_id:
+            return self.json_message("sensor_id is required", 400)
+        duration = data.get("duration", BYPASS_ONE_CYCLE)
+        if duration == BYPASS_ONE_CYCLE or duration == BYPASS_INDEFINITE:
+            until: int = int(duration)
+        else:
+            until = int(time.time() + int(duration))
+        opts = _merged(entry)
+        bypasses = dict(opts.get(CONF_BYPASSED_SENSORS, {}))
+        bypasses[sensor_id] = until
+        opts[CONF_BYPASSED_SENSORS] = bypasses
+        _update(hass, entry, opts)
+        return self.json({"ok": True})
+
+
+class HaAlarmBypassRemoveView(HomeAssistantView):
+    url = "/api/ha_alarm/bypass/remove"
+    name = "api:ha_alarm:bypass:remove"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass = request.app["hass"]
+        entry = _get_entry(hass)
+        if not entry:
+            return self.json_message("No alarm configured", 404)
+        data = await request.json()
+        sensor_id = data.get("sensor_id", "").strip()
+        opts = _merged(entry)
+        bypasses = dict(opts.get(CONF_BYPASSED_SENSORS, {}))
+        bypasses.pop(sensor_id, None)
+        opts[CONF_BYPASSED_SENSORS] = bypasses
         _update(hass, entry, opts)
         return self.json({"ok": True})
 
