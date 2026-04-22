@@ -45,6 +45,7 @@ from .const import (
     MODE_HOME,
     MODE_NIGHT,
     MODE_VACATION,
+    MODE_SENSOR_CLASSES,
 )
 
 
@@ -146,31 +147,54 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
 
     # ------------------------------------------------------------ sensors
 
+    def _split_sensors(
+        self, entity_ids: list[str], device_classes: list[str]
+    ) -> tuple[list[str], list[str]]:
+        """Split saved entity IDs into (matching device class, everything else)."""
+        suggested, extra = [], []
+        for eid in entity_ids:
+            state = self.hass.states.get(eid)
+            dc = state.attributes.get("device_class") if state else None
+            (suggested if dc in device_classes else extra).append(eid)
+        return suggested, extra
+
     async def async_step_sensors(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
         if user_input is not None:
-            self._opts[CONF_SENSORS] = {
-                MODE_AWAY: user_input.get(MODE_AWAY, []),
-                MODE_HOME: user_input.get(MODE_HOME, []),
-                MODE_NIGHT: user_input.get(MODE_NIGHT, []),
-                MODE_VACATION: user_input.get(MODE_VACATION, []),
-                MODE_CUSTOM: user_input.get(MODE_CUSTOM, []),
-            }
+            sensors: dict[str, list[str]] = {}
+            for mode in ALL_MODES:
+                primary = user_input.get(mode, [])
+                extra = user_input.get(f"{mode}_extra", [])
+                seen: set[str] = set()
+                combined: list[str] = []
+                for eid in primary + extra:
+                    if eid not in seen:
+                        seen.add(eid)
+                        combined.append(eid)
+                sensors[mode] = combined
+            self._opts[CONF_SENSORS] = sensors
             return self.async_create_entry(title="", data=self._opts)
 
         cur = self._opts.get(CONF_SENSORS, {})
+        schema_dict: dict = {}
+
+        for mode in ALL_MODES:
+            existing: list[str] = cur.get(mode, [])
+            classes = MODE_SENSOR_CLASSES.get(mode)
+
+            if classes is not None:
+                suggested, extra = self._split_sensors(existing, classes)
+                schema_dict[vol.Optional(mode, default=suggested)] = EntitySelector(
+                    EntitySelectorConfig(domain="binary_sensor", device_class=classes, multiple=True)
+                )
+                schema_dict[vol.Optional(f"{mode}_extra", default=extra)] = _BINARY_SENSOR_SEL
+            else:
+                # Custom mode: no device-class filter
+                schema_dict[vol.Optional(mode, default=existing)] = _BINARY_SENSOR_SEL
+
         return self.async_show_form(
-            step_id="sensors",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(MODE_AWAY, default=cur.get(MODE_AWAY, [])): _BINARY_SENSOR_SEL,
-                    vol.Optional(MODE_HOME, default=cur.get(MODE_HOME, [])): _BINARY_SENSOR_SEL,
-                    vol.Optional(MODE_NIGHT, default=cur.get(MODE_NIGHT, [])): _BINARY_SENSOR_SEL,
-                    vol.Optional(MODE_VACATION, default=cur.get(MODE_VACATION, [])): _BINARY_SENSOR_SEL,
-                    vol.Optional(MODE_CUSTOM, default=cur.get(MODE_CUSTOM, [])): _BINARY_SENSOR_SEL,
-                }
-            ),
+            step_id="sensors", data_schema=vol.Schema(schema_dict)
         )
 
     # ------------------------------------------------------------- delays

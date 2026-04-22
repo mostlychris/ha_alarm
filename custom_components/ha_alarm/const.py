@@ -51,3 +51,16 @@ ALL_EVENTS = [
 # Default delays in seconds
 DEFAULT_ENTRY_DELAY = 30
 DEFAULT_EXIT_DELAY = 60
+
+# Typical binary_sensor device classes per arm mode.
+# None means no filter (show all).
+MODE_SENSOR_CLASSES: dict[str, list[str] | None] = {
+    MODE_HOME: ["door", "window", "garage_door", "glass_break", "lock"],
+    MODE_AWAY: ["door", "window", "garage_door", "glass_break", "motion", "vibration", "lock", "sound"],
+    MODE_NIGHT: ["door", "window", "garage_door", "glass_break", "lock", "motion"],
+    MODE_VACATION: [
+        "door", "window", "garage_door", "glass_break", "motion", "vibration",
+        "lock", "smoke", "carbon_monoxide", "moisture", "gas",
+    ],
+    MODE_CUSTOM: None,
+}

@@ -32,13 +32,17 @@
       },
       "sensors": {
         "title": "Configure Sensors",
-        "description": "Select which binary sensors are active in each arm mode.",
+        "description": "Suggested sensors are pre-filtered by the device classes typical for each mode. Use the Additional Sensors pickers for any sensors that don't have a device class assigned.\n\n• Home: door, window, garage door, glass break, lock\n• Away: door, window, motion, vibration, lock, glass break, sound\n• Night: door, window, motion, lock, glass break\n• Vacation: door, window, motion, smoke, CO, moisture, glass break, lock\n• Custom: all sensors (no filter)",
         "data": {
-          "armed_away": "Away Mode Sensors",
-          "armed_home": "Home Mode Sensors",
-          "armed_night": "Night Mode Sensors",
-          "armed_vacation": "Vacation Mode Sensors",
-          "armed_custom_bypass": "Custom Mode Sensors"
+          "armed_away": "Away — Suggested Sensors",
+          "armed_away_extra": "Away — Additional Sensors",
+          "armed_home": "Home — Suggested Sensors",
+          "armed_home_extra": "Home — Additional Sensors",
+          "armed_night": "Night — Suggested Sensors",
+          "armed_night_extra": "Night — Additional Sensors",
+          "armed_vacation": "Vacation — Suggested Sensors",
+          "armed_vacation_extra": "Vacation — Additional Sensors",
+          "armed_custom_bypass": "Custom — All Sensors"
         }
       },
       "delays": {
