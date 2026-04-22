@@ -58,7 +58,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             sidebar_icon="mdi:shield-home-outline",
             module_url=f"{_STATIC_URL}/ha_alarm_panel.js",
             embed_iframe=False,
-            trust_external_script=False,
         )
         hass.data[DOMAIN][_PANEL_KEY] = True
 
