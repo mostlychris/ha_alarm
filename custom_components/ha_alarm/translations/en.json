@@ -96,8 +96,7 @@
           "event_pending": "Notify on entry delay (pending)",
           "event_failed": "Notify on invalid code attempt"
         }
-      }
-    },
+      },
       "general": {
         "title": "General Settings",
         "data": {
