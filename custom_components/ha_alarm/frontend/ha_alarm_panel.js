@@ -28,11 +28,12 @@ const EVENT_LABELS = {
 class HaAlarmPanel extends HTMLElement {
   constructor() {
     super();
-    this._hass        = null;
-    this._config      = null;
-    this._activeMode  = "armed_away";
-    this._showOthers  = {};
-    this._ready       = false;
+    this.attachShadow({ mode: "open" });
+    this._hass       = null;
+    this._config     = null;
+    this._activeMode = "armed_away";
+    this._showOthers = {};
+    this._ready      = false;
   }
 
   set hass(hass) {
@@ -65,7 +66,7 @@ class HaAlarmPanel extends HTMLElement {
   // ── Build shell ───────────────────────────────────────────────────────────
 
   _build() {
-    this.innerHTML = `<style>${CSS}</style>
+    this.shadowRoot.innerHTML = `<style>${CSS}</style>
 <div class="panel">
   <div class="page-header">
     <span class="page-title">Alarm Settings</span>
@@ -74,7 +75,7 @@ class HaAlarmPanel extends HTMLElement {
 
   ${this._card("sensors", "Sensors", `
     <div class="tabs" id="mode-tabs">
-      ${MODES.map((m,i) => `<button class="tab${i===0?" active":""}" data-mode="${m.key}">${m.label}</button>`).join("")}
+      ${MODES.map((m, i) => `<button class="tab${i === 0 ? " active" : ""}" data-mode="${m.key}">${m.label}</button>`).join("")}
     </div>
     <div id="sensor-list" class="sensor-list"><p class="muted">Loading sensors…</p></div>
     <div class="row-end"><button class="btn" id="save-sensors">Save Sensors</button></div>
@@ -84,7 +85,7 @@ class HaAlarmPanel extends HTMLElement {
     <table class="dtable">
       <thead><tr><th>Mode</th><th>Entry (s)</th><th>Exit (s)</th></tr></thead>
       <tbody>
-        ${MODES.map(m=>`
+        ${MODES.map(m => `
         <tr>
           <td class="mode-cell">${m.label}</td>
           <td><input class="num" type="number" min="0" max="600" step="5" data-mode="${m.key}" data-t="entry_delay" value="30"></td>
@@ -106,14 +107,14 @@ class HaAlarmPanel extends HTMLElement {
   `)}
 
   ${this._card("notifications", "Notifications", `
-    <div class="field-row">
-      <label>Targets</label>
-      <textarea id="notif-targets" rows="3" placeholder="notify.mobile_app_phone, notify.group_name"></textarea>
+    <p class="sub-heading">Notification Targets</p>
+    <div class="svc-list" id="notif-services">
+      <p class="muted">Loading available notify services…</p>
     </div>
-    <p class="muted small">Comma-separated list of notify service targets.</p>
-    <p class="sub-heading" style="margin-top:16px">Notify on</p>
+    <p class="muted small" style="margin-top:6px">Select which Home Assistant notify services receive alarm notifications.</p>
+    <p class="sub-heading" style="margin-top:16px">Notify on Events</p>
     <div class="event-grid">
-      ${ALL_EVENTS.map(e=>`
+      ${ALL_EVENTS.map(e => `
       <label class="event-row">
         <input type="checkbox" class="ev-cb" data-event="${e}">
         <span>${EVENT_LABELS[e]}</span>
@@ -165,32 +166,32 @@ class HaAlarmPanel extends HTMLElement {
   // ── Wire events ───────────────────────────────────────────────────────────
 
   _wire() {
-    // Collapse toggle
-    this.querySelectorAll(".card-header").forEach(h => {
+    const sr = this.shadowRoot;
+
+    sr.querySelectorAll(".card-header").forEach(h => {
       h.addEventListener("click", () => {
-        const body  = this.querySelector(`#body-${h.dataset.id}`);
-        const chev  = this.querySelector(`#chev-${h.dataset.id}`);
-        const open  = !body.classList.contains("closed");
+        const body = sr.querySelector(`#body-${h.dataset.id}`);
+        const chev = sr.querySelector(`#chev-${h.dataset.id}`);
+        const open = !body.classList.contains("closed");
         body.classList.toggle("closed", open);
         chev.textContent = open ? "▸" : "▾";
       });
     });
 
-    // Mode tabs
-    this.querySelector("#mode-tabs").addEventListener("click", e => {
+    sr.querySelector("#mode-tabs").addEventListener("click", e => {
       const tab = e.target.closest(".tab");
       if (!tab) return;
-      this.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      sr.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
       tab.classList.add("active");
       this._activeMode = tab.dataset.mode;
       this._renderSensors();
     });
 
-    this.querySelector("#save-sensors")  .addEventListener("click", () => this._saveSensors());
-    this.querySelector("#save-delays")   .addEventListener("click", () => this._saveDelays());
-    this.querySelector("#add-user")      .addEventListener("click", () => this._addUser());
-    this.querySelector("#save-notif")    .addEventListener("click", () => this._saveNotif());
-    this.querySelector("#save-general")  .addEventListener("click", () => this._saveGeneral());
+    sr.querySelector("#save-sensors").addEventListener("click", () => this._saveSensors());
+    sr.querySelector("#save-delays") .addEventListener("click", () => this._saveDelays());
+    sr.querySelector("#add-user")    .addEventListener("click", () => this._addUser());
+    sr.querySelector("#save-notif")  .addEventListener("click", () => this._saveNotif());
+    sr.querySelector("#save-general").addEventListener("click", () => this._saveGeneral());
   }
 
   // ── Populate ──────────────────────────────────────────────────────────────
@@ -205,7 +206,7 @@ class HaAlarmPanel extends HTMLElement {
   }
 
   _refreshBadge() {
-    const badge = this.querySelector("#badge");
+    const badge = this.shadowRoot.querySelector("#badge");
     if (!badge || !this._hass) return;
     const entity = Object.values(this._hass.states).find(s => s.entity_id.startsWith("alarm_control_panel."));
     if (!entity) { badge.textContent = "No entity"; return; }
@@ -228,11 +229,12 @@ class HaAlarmPanel extends HTMLElement {
   }
 
   _renderSensors() {
-    const container = this.querySelector("#sensor-list");
+    const sr        = this.shadowRoot;
+    const container = sr.querySelector("#sensor-list");
     if (!container) return;
-    const selected = new Set(this._config?.sensors?.[this._activeMode] || []);
-    const classes  = MODE_CLASSES[this._activeMode];
-    const all      = this._binarySensors();
+    const selected  = new Set(this._config?.sensors?.[this._activeMode] || []);
+    const classes   = MODE_CLASSES[this._activeMode];
+    const all       = this._binarySensors();
     const suggested = classes ? all.filter(s => classes.includes(s.attributes.device_class)) : all;
     const others    = classes ? all.filter(s => !classes.includes(s.attributes.device_class)) : [];
 
@@ -273,7 +275,7 @@ class HaAlarmPanel extends HTMLElement {
 
   async _saveSensors() {
     const sensors = { ...(this._config?.sensors || {}) };
-    sensors[this._activeMode] = [...this.querySelectorAll(".s-cb:checked")].map(cb => cb.value);
+    sensors[this._activeMode] = [...this.shadowRoot.querySelectorAll(".s-cb:checked")].map(cb => cb.value);
     await this._api("POST", "sensors", sensors);
     if (this._config) this._config.sensors = sensors;
     this._toast("Sensors saved ✓");
@@ -282,7 +284,7 @@ class HaAlarmPanel extends HTMLElement {
   // ── Delays ────────────────────────────────────────────────────────────────
 
   _populateDelays() {
-    this.querySelectorAll(".num").forEach(inp => {
+    this.shadowRoot.querySelectorAll(".num[data-mode]").forEach(inp => {
       const v = this._config?.delays?.[inp.dataset.mode]?.[inp.dataset.t];
       if (v !== undefined) inp.value = v;
     });
@@ -290,8 +292,8 @@ class HaAlarmPanel extends HTMLElement {
 
   async _saveDelays() {
     const delays = {};
-    MODES.forEach(m => delays[m.key] = { entry_delay: 0, exit_delay: 0 });
-    this.querySelectorAll(".num").forEach(inp => {
+    MODES.forEach(m => { delays[m.key] = { entry_delay: 0, exit_delay: 0 }; });
+    this.shadowRoot.querySelectorAll(".num[data-mode]").forEach(inp => {
       delays[inp.dataset.mode][inp.dataset.t] = parseInt(inp.value, 10) || 0;
     });
     await this._api("POST", "delays", delays);
@@ -302,7 +304,7 @@ class HaAlarmPanel extends HTMLElement {
   // ── Codes ─────────────────────────────────────────────────────────────────
 
   _populateCodes() {
-    const el = this.querySelector("#codes-list");
+    const el = this.shadowRoot.querySelector("#codes-list");
     if (!el) return;
     const codes = this._config?.codes || [];
     if (!codes.length) { el.innerHTML = `<p class="muted">No users configured.</p>`; return; }
@@ -318,15 +320,16 @@ class HaAlarmPanel extends HTMLElement {
   }
 
   async _addUser() {
-    const name    = this.querySelector("#new-name")?.value.trim();
-    const code    = this.querySelector("#new-code")?.value || "";
-    const isAdmin = this.querySelector("#new-admin")?.checked || false;
-    if (!name)         return this._toast("Name is required", true);
-    if (code.length<4) return this._toast("Code must be at least 4 digits", true);
+    const sr      = this.shadowRoot;
+    const name    = sr.querySelector("#new-name")?.value.trim();
+    const code    = sr.querySelector("#new-code")?.value || "";
+    const isAdmin = sr.querySelector("#new-admin")?.checked || false;
+    if (!name)          return this._toast("Name is required", true);
+    if (code.length < 4) return this._toast("Code must be at least 4 digits", true);
     await this._api("POST", "codes/add", { name, code, is_admin: isAdmin });
-    this.querySelector("#new-name").value  = "";
-    this.querySelector("#new-code").value  = "";
-    this.querySelector("#new-admin").checked = false;
+    sr.querySelector("#new-name").value    = "";
+    sr.querySelector("#new-code").value    = "";
+    sr.querySelector("#new-admin").checked = false;
     this._config = await this._api("GET", "config");
     this._populateCodes();
     this._toast("User added ✓");
@@ -343,41 +346,66 @@ class HaAlarmPanel extends HTMLElement {
   // ── Notifications ─────────────────────────────────────────────────────────
 
   _populateNotif() {
-    const n = this._config?.notifications || {};
-    const ta = this.querySelector("#notif-targets");
-    if (ta) ta.value = (n.notify_targets || []).join(", ");
+    const n              = this._config?.notifications || {};
+    const enabledTargets = new Set(n.notify_targets || []);
+
+    // Build notify-services checklist from live hass.services
+    const container = this.shadowRoot.querySelector("#notif-services");
+    if (container) {
+      const notifySvcs = this._hass?.services?.notify || {};
+      const available  = Object.keys(notifySvcs).sort();
+      if (!available.length) {
+        container.innerHTML = `<p class="muted">No notify services found. Add a notification integration (e.g. Mobile App) first.</p>`;
+      } else {
+        container.innerHTML = available.map(s => {
+          const fullId  = `notify.${s}`;
+          const label   = s.replace(/_/g, " ");
+          const checked = enabledTargets.has(fullId) ? "checked" : "";
+          return `<label class="svc-row">
+            <input type="checkbox" class="svc-cb" value="${fullId}" ${checked}>
+            <span class="svc-name">${label}</span>
+            <span class="chip">${fullId}</span>
+          </label>`;
+        }).join("");
+      }
+    }
+
     const evts = n.notify_events || {};
-    this.querySelectorAll(".ev-cb").forEach(cb => {
+    this.shadowRoot.querySelectorAll(".ev-cb").forEach(cb => {
       cb.checked = evts[cb.dataset.event] !== false;
     });
   }
 
   async _saveNotif() {
-    const raw     = this.querySelector("#notif-targets")?.value || "";
-    const targets = raw.split(",").map(t => t.trim()).filter(Boolean);
+    const targets = [...this.shadowRoot.querySelectorAll(".svc-cb:checked")].map(cb => cb.value);
     const events  = {};
-    ALL_EVENTS.forEach(e => events[e] = false);
-    this.querySelectorAll(".ev-cb").forEach(cb => { events[cb.dataset.event] = cb.checked; });
+    ALL_EVENTS.forEach(e => { events[e] = false; });
+    this.shadowRoot.querySelectorAll(".ev-cb").forEach(cb => { events[cb.dataset.event] = cb.checked; });
     await this._api("POST", "notifications", { notify_targets: targets, notify_events: events });
+    if (this._config) {
+      this._config.notifications = { notify_targets: targets, notify_events: events };
+    }
     this._toast("Notifications saved ✓");
   }
 
   // ── General ───────────────────────────────────────────────────────────────
 
   _populateGeneral() {
-    const armReq = this.querySelector("#arm-req");
+    const sr     = this.shadowRoot;
+    const armReq = sr.querySelector("#arm-req");
     if (armReq) armReq.checked = this._config?.code_arm_required !== false;
-    const tt = this.querySelector("#trigger-time");
+    const tt = sr.querySelector("#trigger-time");
     if (tt) tt.value = this._config?.trigger_time ?? 600;
-    const dat = this.querySelector("#disarm-after-trigger");
+    const dat = sr.querySelector("#disarm-after-trigger");
     if (dat) dat.checked = this._config?.disarm_after_trigger === true;
   }
 
   async _saveGeneral() {
+    const sr      = this.shadowRoot;
     const payload = {
-      code_arm_required:    this.querySelector("#arm-req")?.checked ?? true,
-      trigger_time:         parseInt(this.querySelector("#trigger-time")?.value || "600", 10),
-      disarm_after_trigger: this.querySelector("#disarm-after-trigger")?.checked ?? false,
+      code_arm_required:    sr.querySelector("#arm-req")?.checked ?? true,
+      trigger_time:         parseInt(sr.querySelector("#trigger-time")?.value || "600", 10),
+      disarm_after_trigger: sr.querySelector("#disarm-after-trigger")?.checked ?? false,
     };
     await this._api("POST", "general", payload);
     if (this._config) Object.assign(this._config, payload);
@@ -387,7 +415,7 @@ class HaAlarmPanel extends HTMLElement {
   // ── Toast ─────────────────────────────────────────────────────────────────
 
   _toast(msg, err = false) {
-    const el = this.querySelector("#toast");
+    const el = this.shadowRoot.querySelector("#toast");
     if (!el) return;
     el.textContent = msg;
     el.className   = `toast${err ? " err" : ""}`;
@@ -400,6 +428,7 @@ class HaAlarmPanel extends HTMLElement {
 
 const CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
+:host{display:block}
 .panel{
   max-width:860px;margin:0 auto;padding:20px 16px;
   font-family:var(--paper-font-body1_-_font-family,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif);
@@ -475,17 +504,27 @@ const CSS = `
 .divider{border-top:1px solid var(--divider-color,#383c4a);margin:16px 0}
 .sub-heading{font-size:13px;font-weight:500;margin-bottom:10px;color:var(--secondary-text-color,#9095a5)}
 
+.svc-list{
+  max-height:200px;overflow-y:auto;
+  border:1px solid var(--divider-color,#383c4a);
+  border-radius:6px;padding:2px 8px;margin-top:4px
+}
+.svc-row{
+  display:flex;align-items:center;gap:8px;padding:7px 0;cursor:pointer;font-size:13px;
+  border-bottom:1px solid var(--divider-color,#383c4a22)
+}
+.svc-row:last-child{border-bottom:none}
+.svc-name{flex:1;text-transform:capitalize}
+
 .field-row{display:flex;align-items:flex-start;gap:12px;margin-bottom:10px}
 .field-row label{width:100px;flex-shrink:0;padding-top:7px;color:var(--secondary-text-color,#9095a5)}
 .field-row input[type=text],
-.field-row input[type=password],
-.field-row textarea{
+.field-row input[type=password]{
   flex:1;background:var(--secondary-background-color,#1e2028);
   border:1px solid var(--divider-color,#383c4a);
   color:var(--primary-text-color,#e8e8e8);
   padding:7px 10px;border-radius:6px;font-size:13px;font-family:inherit
 }
-textarea{resize:vertical;min-height:64px;width:100%}
 
 .event-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:4px 0 14px}
 .event-row{display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:13px}

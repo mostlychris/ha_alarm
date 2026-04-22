@@ -15,6 +15,7 @@ from .http_views import (
     HaAlarmConfigView,
     HaAlarmDelaysView,
     HaAlarmGeneralView,
+    HaAlarmIconView,
     HaAlarmNotificationsView,
     HaAlarmSensorsView,
 )
@@ -39,6 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hass.http.async_register_static_paths([
             StaticPathConfig(_STATIC_URL, str(frontend_path), cache_headers=False)
         ])
+        hass.http.register_view(HaAlarmIconView())
         hass.http.register_view(HaAlarmConfigView())
         hass.http.register_view(HaAlarmSensorsView())
         hass.http.register_view(HaAlarmDelaysView())

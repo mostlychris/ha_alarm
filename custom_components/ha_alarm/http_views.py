@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from pathlib import Path
 from typing import Any
 
 from aiohttp import web
@@ -25,6 +26,20 @@ from .const import (
 )
 
 _API_UPDATE_FLAG = "api_update"
+_ICON_PATH = Path(__file__).parent / "icon.png"
+
+
+class HaAlarmIconView(HomeAssistantView):
+    """Serve icon.png at /{domain}/icon.png so HA's integrations card can find it."""
+
+    url = "/ha_alarm/icon.png"
+    name = "api:ha_alarm:icon"
+    requires_auth = False
+
+    async def get(self, request: web.Request) -> web.Response:
+        if not _ICON_PATH.exists():
+            raise web.HTTPNotFound()
+        return web.FileResponse(_ICON_PATH, headers={"Content-Type": "image/png"})
 
 
 def _get_entry(hass: HomeAssistant):
