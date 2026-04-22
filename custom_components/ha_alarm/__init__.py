@@ -37,9 +37,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     if not hass.data[DOMAIN].get(_HTTP_KEY):
-        frontend_path = Path(__file__).parent / "frontend"
+        component_path = Path(__file__).parent
+        frontend_path = component_path / "frontend"
         await hass.http.async_register_static_paths([
-            StaticPathConfig(_STATIC_URL, str(frontend_path), cache_headers=False)
+            StaticPathConfig(_STATIC_URL, str(frontend_path), cache_headers=False),
+            StaticPathConfig(f"/{DOMAIN}", str(component_path), cache_headers=False),
         ])
         hass.http.register_view(HaAlarmIconView())
         hass.http.register_view(HaAlarmConfigView())

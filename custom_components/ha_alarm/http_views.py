@@ -46,7 +46,12 @@ class HaAlarmIconView(HomeAssistantView):
     async def get(self, request: web.Request) -> web.Response:
         if not _ICON_PATH.exists():
             raise web.HTTPNotFound()
-        return web.FileResponse(_ICON_PATH, headers={"Content-Type": "image/png"})
+        content = _ICON_PATH.read_bytes()
+        return web.Response(
+            body=content,
+            content_type="image/png",
+            headers={"Cache-Control": "no-cache, no-store"},
+        )
 
 
 def _get_entry(hass: HomeAssistant):
