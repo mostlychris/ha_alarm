@@ -55,12 +55,20 @@ DEFAULT_EXIT_DELAY = 60
 # Typical binary_sensor device classes per arm mode.
 # None means no filter (show all).
 MODE_SENSOR_CLASSES: dict[str, list[str] | None] = {
-    MODE_HOME: ["door", "window", "garage_door", "glass_break", "lock"],
-    MODE_AWAY: ["door", "window", "garage_door", "glass_break", "motion", "vibration", "lock", "sound"],
-    MODE_NIGHT: ["door", "window", "garage_door", "glass_break", "lock", "motion"],
+    # Perimeter only — you're inside so motion sensors would cause false trips
+    MODE_HOME: ["door", "window", "garage_door", "opening", "lock"],
+    # All perimeter + interior detection
+    MODE_AWAY: [
+        "door", "window", "garage_door", "opening", "lock",
+        "motion", "occupancy", "presence", "vibration", "tamper",
+    ],
+    # Perimeter + entry-point motion (e.g. hallway/stairwell)
+    MODE_NIGHT: ["door", "window", "garage_door", "opening", "lock", "motion"],
+    # Everything including safety sensors for extended absence
     MODE_VACATION: [
-        "door", "window", "garage_door", "glass_break", "motion", "vibration",
-        "lock", "smoke", "carbon_monoxide", "moisture", "gas",
+        "door", "window", "garage_door", "opening", "lock",
+        "motion", "occupancy", "presence", "vibration", "tamper",
+        "smoke", "carbon_monoxide", "moisture",
     ],
     MODE_CUSTOM: None,
 }

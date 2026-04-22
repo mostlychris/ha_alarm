@@ -108,6 +108,10 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         return self._alarm_state
 
     @property
+    def code_arm_required(self) -> bool:
+        return self._cfg().get(CONF_CODE_ARM_REQUIRED, True)
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"armed_mode": self._armed_mode}
 

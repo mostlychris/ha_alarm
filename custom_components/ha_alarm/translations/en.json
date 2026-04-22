@@ -32,7 +32,7 @@
       },
       "sensors": {
         "title": "Configure Sensors",
-        "description": "Suggested sensors are pre-filtered by the device classes typical for each mode. Use the Additional Sensors pickers for any sensors that don't have a device class assigned.\n\n• Home: door, window, garage door, glass break, lock\n• Away: door, window, motion, vibration, lock, glass break, sound\n• Night: door, window, motion, lock, glass break\n• Vacation: door, window, motion, smoke, CO, moisture, glass break, lock\n• Custom: all sensors (no filter)",
+        "description": "Suggested sensors are pre-filtered by the device classes typical for each mode. Use the Additional Sensors pickers for any sensors that don't have a device class assigned.\n\n• Home: door, window, garage door, opening, lock\n• Away: door, window, garage door, opening, lock, motion, occupancy, presence, vibration, tamper\n• Night: door, window, garage door, opening, lock, motion\n• Vacation: all security sensors + smoke, CO, moisture\n• Custom: all sensors (no filter)",
         "data": {
           "armed_away": "Away — Suggested Sensors",
           "armed_away_extra": "Away — Additional Sensors",
