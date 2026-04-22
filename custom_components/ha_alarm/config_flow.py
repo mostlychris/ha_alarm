@@ -36,9 +36,12 @@ from .const import (
     CONF_NOTIFICATIONS,
     CONF_NOTIFY_EVENTS,
     CONF_NOTIFY_TARGETS,
+    CONF_DISARM_AFTER_TRIGGER,
     CONF_SENSORS,
+    CONF_TRIGGER_TIME,
     DEFAULT_ENTRY_DELAY,
     DEFAULT_EXIT_DELAY,
+    DEFAULT_TRIGGER_TIME,
     DOMAIN,
     MODE_AWAY,
     MODE_CUSTOM,
@@ -74,6 +77,8 @@ def _default_data(admin_name: str, raw_code: str) -> dict[str, Any]:
             CONF_NOTIFY_EVENTS: {e: True for e in ALL_EVENTS},
         },
         CONF_CODE_ARM_REQUIRED: True,
+        CONF_TRIGGER_TIME: DEFAULT_TRIGGER_TIME,
+        CONF_DISARM_AFTER_TRIGGER: False,
     }
 
 
@@ -349,6 +354,8 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.FlowResult:
         if user_input is not None:
             self._opts[CONF_CODE_ARM_REQUIRED] = user_input[CONF_CODE_ARM_REQUIRED]
+            self._opts[CONF_TRIGGER_TIME] = int(user_input[CONF_TRIGGER_TIME])
+            self._opts[CONF_DISARM_AFTER_TRIGGER] = user_input[CONF_DISARM_AFTER_TRIGGER]
             return self.async_create_entry(title="", data=self._opts)
 
         return self.async_show_form(
@@ -358,6 +365,16 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
                     vol.Required(
                         CONF_CODE_ARM_REQUIRED,
                         default=self._opts.get(CONF_CODE_ARM_REQUIRED, True),
+                    ): BooleanSelector(),
+                    vol.Required(
+                        CONF_TRIGGER_TIME,
+                        default=self._opts.get(CONF_TRIGGER_TIME, DEFAULT_TRIGGER_TIME),
+                    ): NumberSelector(NumberSelectorConfig(
+                        min=0, max=3600, step=30, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
+                    )),
+                    vol.Required(
+                        CONF_DISARM_AFTER_TRIGGER,
+                        default=self._opts.get(CONF_DISARM_AFTER_TRIGGER, False),
                     ): BooleanSelector(),
                 }
             ),

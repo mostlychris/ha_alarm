@@ -29,9 +29,12 @@ from .const import (
     CONF_NOTIFICATIONS,
     CONF_NOTIFY_EVENTS,
     CONF_NOTIFY_TARGETS,
+    CONF_DISARM_AFTER_TRIGGER,
     CONF_SENSORS,
+    CONF_TRIGGER_TIME,
     DEFAULT_ENTRY_DELAY,
     DEFAULT_EXIT_DELAY,
+    DEFAULT_TRIGGER_TIME,
     EVENT_ARMED,
     EVENT_ARMING,
     EVENT_DISARMED,
@@ -193,6 +196,25 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         self._unsubscribe_sensors()
         self._set_state(AlarmControlPanelState.TRIGGERED)
         self._notify(EVENT_TRIGGERED, sensor_id)
+        trigger_time = self._cfg().get(CONF_TRIGGER_TIME, DEFAULT_TRIGGER_TIME)
+        if trigger_time > 0:
+            self._cancel_timer()
+            self._timer = self.hass.loop.call_later(
+                trigger_time, self._timer_trigger_timeout
+            )
+
+    def _timer_trigger_timeout(self) -> None:
+        self._timer = None
+        if self._cfg().get(CONF_DISARM_AFTER_TRIGGER, False):
+            self._armed_mode = None
+            self._set_state(AlarmControlPanelState.DISARMED)
+            self._notify(EVENT_DISARMED)
+        elif self._armed_mode:
+            armed_state = MODE_TO_STATE.get(self._armed_mode)
+            if armed_state:
+                self._subscribe_sensors(self._armed_mode)
+                self._set_state(armed_state)
+                self._notify(EVENT_ARMED)
 
     def _timer_finish_arming(self) -> None:
         self._timer = None

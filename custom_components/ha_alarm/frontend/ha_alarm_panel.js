@@ -130,6 +130,19 @@ class HaAlarmPanel extends HTMLElement {
       </div>
       <input type="checkbox" id="arm-req" checked>
     </label>
+    <div class="divider"></div>
+    <div class="field-row">
+      <label>Trigger duration</label>
+      <input type="number" class="num" id="trigger-time" min="0" max="3600" step="30" value="600">
+      <span class="muted">seconds (0 = indefinite)</span>
+    </div>
+    <label class="toggle-row">
+      <div>
+        <div class="toggle-label">Disarm after trigger</div>
+        <div class="muted small">When on, alarm automatically disarms after the trigger duration. When off, it returns to armed.</div>
+      </div>
+      <input type="checkbox" id="disarm-after-trigger">
+    </label>
     <div class="row-end"><button class="btn" id="save-general">Save</button></div>
   `)}
 </div>
@@ -352,14 +365,22 @@ class HaAlarmPanel extends HTMLElement {
   // ── General ───────────────────────────────────────────────────────────────
 
   _populateGeneral() {
-    const cb = this.querySelector("#arm-req");
-    if (cb) cb.checked = this._config?.code_arm_required !== false;
+    const armReq = this.querySelector("#arm-req");
+    if (armReq) armReq.checked = this._config?.code_arm_required !== false;
+    const tt = this.querySelector("#trigger-time");
+    if (tt) tt.value = this._config?.trigger_time ?? 600;
+    const dat = this.querySelector("#disarm-after-trigger");
+    if (dat) dat.checked = this._config?.disarm_after_trigger === true;
   }
 
   async _saveGeneral() {
-    const val = this.querySelector("#arm-req")?.checked ?? true;
-    await this._api("POST", "general", { code_arm_required: val });
-    if (this._config) this._config.code_arm_required = val;
+    const payload = {
+      code_arm_required:    this.querySelector("#arm-req")?.checked ?? true,
+      trigger_time:         parseInt(this.querySelector("#trigger-time")?.value || "600", 10),
+      disarm_after_trigger: this.querySelector("#disarm-after-trigger")?.checked ?? false,
+    };
+    await this._api("POST", "general", payload);
+    if (this._config) Object.assign(this._config, payload);
     this._toast("Saved ✓");
   }
 

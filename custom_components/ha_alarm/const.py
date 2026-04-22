@@ -24,6 +24,10 @@ CONF_ENTRY_DELAY = "entry_delay"
 CONF_EXIT_DELAY = "exit_delay"
 
 CONF_CODE_ARM_REQUIRED = "code_arm_required"
+CONF_TRIGGER_TIME = "trigger_time"
+CONF_DISARM_AFTER_TRIGGER = "disarm_after_trigger"
+
+DEFAULT_TRIGGER_TIME = 600  # 10 minutes
 
 CONF_NOTIFICATIONS = "notifications"
 CONF_NOTIFY_TARGETS = "notify_targets"

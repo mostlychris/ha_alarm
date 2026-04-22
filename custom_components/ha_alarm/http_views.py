@@ -16,8 +16,11 @@ from .const import (
     CONF_CODE_VALUE,
     CONF_CODES,
     CONF_DELAYS,
+    CONF_DISARM_AFTER_TRIGGER,
     CONF_NOTIFICATIONS,
     CONF_SENSORS,
+    CONF_TRIGGER_TIME,
+    DEFAULT_TRIGGER_TIME,
     DOMAIN,
 )
 
@@ -63,6 +66,8 @@ class HaAlarmConfigView(HomeAssistantView):
             "delays": cfg.get(CONF_DELAYS, {}),
             "notifications": cfg.get(CONF_NOTIFICATIONS, {}),
             "code_arm_required": cfg.get(CONF_CODE_ARM_REQUIRED, True),
+            "trigger_time": cfg.get(CONF_TRIGGER_TIME, DEFAULT_TRIGGER_TIME),
+            "disarm_after_trigger": cfg.get(CONF_DISARM_AFTER_TRIGGER, False),
         })
 
 
@@ -123,6 +128,8 @@ class HaAlarmGeneralView(HomeAssistantView):
         data = await request.json()
         opts = _merged(entry)
         opts[CONF_CODE_ARM_REQUIRED] = bool(data.get("code_arm_required", True))
+        opts[CONF_TRIGGER_TIME] = int(data.get("trigger_time", DEFAULT_TRIGGER_TIME))
+        opts[CONF_DISARM_AFTER_TRIGGER] = bool(data.get("disarm_after_trigger", False))
         _update(hass, entry, opts)
         return self.json({"ok": True})
 
