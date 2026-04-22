@@ -222,21 +222,8 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
             self._notify_chime(new_state.entity_id)
 
     def _notify_chime(self, sensor_id: str) -> None:
-        cfg  = self._cfg()
-        notif_cfg = cfg.get(CONF_NOTIFICATIONS, {})
-        targets: list[str] = notif_cfg.get(CONF_NOTIFY_TARGETS, [])
-        state = self.hass.states.get(sensor_id)
-        name  = state.attributes.get("friendly_name", sensor_id) if state else sensor_id
-        for target in targets:
-            parts = target.split(".", 1)
-            if len(parts) == 2:
-                self.hass.async_create_task(
-                    self.hass.services.async_call(
-                        parts[0], parts[1],
-                        {"message": f"Chime: {name} opened.", "title": "HA Alarm"},
-                    )
-                )
-        # Play chime tone on siren entity if configured
+        """Play the chime tone on the siren entity only — no push notifications."""
+        cfg        = self._cfg()
         entity     = cfg.get(CONF_SIREN_ENTITY, "")
         chime_tone = cfg.get(CONF_CHIME_TONE, "")
         if entity and chime_tone:

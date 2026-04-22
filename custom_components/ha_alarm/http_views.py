@@ -78,19 +78,16 @@ class HaAlarmConfigView(HomeAssistantView):
             return self.json_message("No alarm configured", 404)
         cfg = _merged(entry)
         now = time.time()
-        # Annotate bypass entries with human-readable expiry
+        # Return raw numeric until-values; JS handles display.
+        # Skip entries that have already expired.
         raw_bypasses: dict = cfg.get(CONF_BYPASSED_SENSORS, {})
-        bypasses_out = {}
-        for sid, until in raw_bypasses.items():
-            if until == BYPASS_ONE_CYCLE:
-                label = "one_cycle"
-            elif until == BYPASS_INDEFINITE:
-                label = "indefinite"
-            elif until > now:
-                label = int(until)
-            else:
-                continue  # expired — skip
-            bypasses_out[sid] = label
+        bypasses_out = {
+            sid: int(until)
+            for sid, until in raw_bypasses.items()
+            if until == BYPASS_ONE_CYCLE
+            or until == BYPASS_INDEFINITE
+            or until > now
+        }
         return self.json({
             "entry_title": entry.title,
             "codes": [
