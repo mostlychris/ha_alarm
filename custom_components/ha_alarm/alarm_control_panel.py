@@ -18,6 +18,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
+    CONF_CODE_ARM_REQUIRED,
     CONF_CODE_IS_ADMIN,
     CONF_CODE_SALT,
     CONF_CODE_VALUE,
@@ -266,11 +267,12 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         self._notify(EVENT_DISARMED)
 
     async def _arm(self, mode: str, code: str | None) -> None:
-        valid, _ = self._validate_code(code or "")
-        if not valid:
-            _LOGGER.warning("Invalid code supplied for arm")
-            self._notify(EVENT_FAILED)
-            return
+        if self._cfg().get(CONF_CODE_ARM_REQUIRED, True):
+            valid, _ = self._validate_code(code or "")
+            if not valid:
+                _LOGGER.warning("Invalid code supplied for arm")
+                self._notify(EVENT_FAILED)
+                return
 
         for sensor_id in self._sensors_for_mode(mode):
             state = self.hass.states.get(sensor_id)

@@ -26,7 +26,8 @@
           "sensors": "Configure Sensors",
           "delays": "Configure Entry / Exit Delays",
           "codes": "Manage User Codes",
-          "notifications": "Configure Notifications"
+          "notifications": "Configure Notifications",
+          "general": "General Settings"
         }
       },
       "sensors": {
@@ -90,6 +91,13 @@
           "event_disarming": "Notify when disarming",
           "event_pending": "Notify on entry delay (pending)",
           "event_failed": "Notify on invalid code attempt"
+        }
+      }
+    },
+      "general": {
+        "title": "General Settings",
+        "data": {
+          "code_arm_required": "Require a code to arm (disarm always requires a code)"
         }
       }
     },

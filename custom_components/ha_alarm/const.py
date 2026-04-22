@@ -23,6 +23,8 @@ CONF_DELAYS = "delays"
 CONF_ENTRY_DELAY = "entry_delay"
 CONF_EXIT_DELAY = "exit_delay"
 
+CONF_CODE_ARM_REQUIRED = "code_arm_required"
+
 CONF_NOTIFICATIONS = "notifications"
 CONF_NOTIFY_TARGETS = "notify_targets"
 CONF_NOTIFY_EVENTS = "notify_events"

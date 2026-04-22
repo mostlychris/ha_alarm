@@ -24,6 +24,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     ALL_EVENTS,
     ALL_MODES,
+    CONF_CODE_ARM_REQUIRED,
     CONF_CODE_IS_ADMIN,
     CONF_CODE_NAME,
     CONF_CODE_SALT,
@@ -71,6 +72,7 @@ def _default_data(admin_name: str, raw_code: str) -> dict[str, Any]:
             CONF_NOTIFY_TARGETS: [],
             CONF_NOTIFY_EVENTS: {e: True for e in ALL_EVENTS},
         },
+        CONF_CODE_ARM_REQUIRED: True,
     }
 
 
@@ -139,7 +141,7 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.FlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["sensors", "delays", "codes", "notifications"],
+            menu_options=["sensors", "delays", "codes", "notifications", "general"],
         )
 
     # ------------------------------------------------------------ sensors
@@ -314,4 +316,25 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="notifications",
             data_schema=vol.Schema(schema_dict),
+        )
+
+    # ------------------------------------------------------------- general
+
+    async def async_step_general(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        if user_input is not None:
+            self._opts[CONF_CODE_ARM_REQUIRED] = user_input[CONF_CODE_ARM_REQUIRED]
+            return self.async_create_entry(title="", data=self._opts)
+
+        return self.async_show_form(
+            step_id="general",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CODE_ARM_REQUIRED,
+                        default=self._opts.get(CONF_CODE_ARM_REQUIRED, True),
+                    ): BooleanSelector(),
+                }
+            ),
         )
