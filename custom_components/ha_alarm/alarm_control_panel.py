@@ -8,20 +8,10 @@ from typing import Any
 from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelEntity,
     AlarmControlPanelEntityFeature,
+    AlarmControlPanelState,
     CodeFormat,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    STATE_ALARM_ARMED_AWAY,
-    STATE_ALARM_ARMED_CUSTOM_BYPASS,
-    STATE_ALARM_ARMED_HOME,
-    STATE_ALARM_ARMED_NIGHT,
-    STATE_ALARM_ARMED_VACATION,
-    STATE_ALARM_ARMING,
-    STATE_ALARM_DISARMED,
-    STATE_ALARM_PENDING,
-    STATE_ALARM_TRIGGERED,
-)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -57,18 +47,22 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-MODE_TO_STATE: dict[str, str] = {
-    MODE_AWAY: STATE_ALARM_ARMED_AWAY,
-    MODE_HOME: STATE_ALARM_ARMED_HOME,
-    MODE_NIGHT: STATE_ALARM_ARMED_NIGHT,
-    MODE_VACATION: STATE_ALARM_ARMED_VACATION,
-    MODE_CUSTOM: STATE_ALARM_ARMED_CUSTOM_BYPASS,
+MODE_TO_STATE: dict[str, AlarmControlPanelState] = {
+    MODE_AWAY: AlarmControlPanelState.ARMED_AWAY,
+    MODE_HOME: AlarmControlPanelState.ARMED_HOME,
+    MODE_NIGHT: AlarmControlPanelState.ARMED_NIGHT,
+    MODE_VACATION: AlarmControlPanelState.ARMED_VACATION,
+    MODE_CUSTOM: AlarmControlPanelState.ARMED_CUSTOM_BYPASS,
 }
 
 ARMED_STATES = frozenset(MODE_TO_STATE.values())
 
-# States from which we reset to disarmed on HA restart (timers are lost)
-_TRANSIENT_STATES = {STATE_ALARM_ARMING, STATE_ALARM_PENDING, STATE_ALARM_TRIGGERED}
+# Transient states lost on restart — reset to disarmed
+_TRANSIENT_STATES = {
+    AlarmControlPanelState.ARMING,
+    AlarmControlPanelState.PENDING,
+    AlarmControlPanelState.TRIGGERED,
+}
 
 
 def _hash_code(code: str, salt: str) -> str:
@@ -101,7 +95,7 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         self._entry = entry
         self._attr_unique_id = entry.entry_id
         self._attr_name = entry.title
-        self._state: str = STATE_ALARM_DISARMED
+        self._alarm_state: AlarmControlPanelState = AlarmControlPanelState.DISARMED
         self._armed_mode: str | None = None
         self._timer: asyncio.TimerHandle | None = None
         self._unsub_sensors: list = []
@@ -109,8 +103,8 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
     # ------------------------------------------------------------------ state
 
     @property
-    def state(self) -> str:
-        return self._state
+    def alarm_state(self) -> AlarmControlPanelState:
+        return self._alarm_state
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -163,8 +157,8 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
 
     # --------------------------------------------------------- state machine
 
-    def _set_state(self, state: str) -> None:
-        self._state = state
+    def _set_state(self, state: AlarmControlPanelState) -> None:
+        self._alarm_state = state
         self.async_write_ha_state()
 
     @callback
@@ -172,12 +166,12 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         new_state = event.data.get("new_state")
         if new_state is None or new_state.state != "on":
             return
-        if self._state not in ARMED_STATES:
+        if self._alarm_state not in ARMED_STATES:
             return
 
         entry_delay = self._delay(self._armed_mode, CONF_ENTRY_DELAY)
         if entry_delay > 0:
-            self._set_state(STATE_ALARM_PENDING)
+            self._set_state(AlarmControlPanelState.PENDING)
             self._notify(EVENT_PENDING, new_state.entity_id)
             self._cancel_timer()
             self._timer = self.hass.loop.call_later(
@@ -192,7 +186,7 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
 
     def _do_trigger(self, sensor_id: str | None) -> None:
         self._unsubscribe_sensors()
-        self._set_state(STATE_ALARM_TRIGGERED)
+        self._set_state(AlarmControlPanelState.TRIGGERED)
         self._notify(EVENT_TRIGGERED, sensor_id)
 
     def _timer_finish_arming(self) -> None:
@@ -208,8 +202,15 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
-        if last and last.state not in _TRANSIENT_STATES:
-            self._state = last.state
+        if last is None:
+            return
+        # AlarmControlPanelState is a StrEnum so comparing with last.state string works
+        try:
+            restored = AlarmControlPanelState(last.state)
+        except ValueError:
+            return
+        if restored not in _TRANSIENT_STATES:
+            self._alarm_state = restored
             self._armed_mode = last.attributes.get("armed_mode")
             if self._armed_mode:
                 self._subscribe_sensors(self._armed_mode)
@@ -261,7 +262,7 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         self._cancel_timer()
         self._unsubscribe_sensors()
         self._armed_mode = None
-        self._set_state(STATE_ALARM_DISARMED)
+        self._set_state(AlarmControlPanelState.DISARMED)
         self._notify(EVENT_DISARMED)
 
     async def _arm(self, mode: str, code: str | None) -> None:
@@ -271,7 +272,6 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
             self._notify(EVENT_FAILED)
             return
 
-        # Block arming if sensors are already open
         for sensor_id in self._sensors_for_mode(mode):
             state = self.hass.states.get(sensor_id)
             if state and state.state == "on":
@@ -282,7 +282,7 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         self._armed_mode = mode
         exit_delay = self._delay(mode, CONF_EXIT_DELAY)
         if exit_delay > 0:
-            self._set_state(STATE_ALARM_ARMING)
+            self._set_state(AlarmControlPanelState.ARMING)
             self._notify(EVENT_ARMING)
             self._cancel_timer()
             self._timer = self.hass.loop.call_later(exit_delay, self._timer_finish_arming)
