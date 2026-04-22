@@ -109,10 +109,7 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
 
     @property
     def code_arm_required(self) -> bool:
-        # Always True so HA's frontend renders the full keypad + submit button in
-        # every state (including disarm). Whether arming actually validates the code
-        # is controlled by CONF_CODE_ARM_REQUIRED in _arm() below.
-        return True
+        return self._cfg().get(CONF_CODE_ARM_REQUIRED, True)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
