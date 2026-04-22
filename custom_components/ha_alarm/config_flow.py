@@ -27,6 +27,7 @@ from .const import (
     CONF_BYPASSED_SENSORS,
     CONF_CHIME_MODE,
     CONF_CHIME_SENSORS,
+    CONF_CHIME_TONE,
     CONF_CODE_ARM_REQUIRED,
     CONF_CODE_IS_ADMIN,
     CONF_CODE_NAME,
@@ -42,6 +43,7 @@ from .const import (
     CONF_NOTIFY_TARGETS,
     CONF_SENSORS,
     CONF_SIREN_ENTITY,
+    CONF_SIREN_TONE,
     CONF_TRIGGER_TIME,
     DEFAULT_ENTRY_DELAY,
     DEFAULT_EXIT_DELAY,
@@ -84,8 +86,10 @@ def _default_data(admin_name: str, raw_code: str) -> dict[str, Any]:
         CONF_TRIGGER_TIME: DEFAULT_TRIGGER_TIME,
         CONF_DISARM_AFTER_TRIGGER: False,
         CONF_SIREN_ENTITY: "",
+        CONF_SIREN_TONE: "",
         CONF_CHIME_MODE: False,
         CONF_CHIME_SENSORS: [],
+        CONF_CHIME_TONE: "",
         CONF_BYPASSED_SENSORS: {},
     }
 
@@ -361,8 +365,9 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
         if user_input is not None:
-            self._opts[CONF_CHIME_MODE] = user_input[CONF_CHIME_MODE]
+            self._opts[CONF_CHIME_MODE]    = user_input[CONF_CHIME_MODE]
             self._opts[CONF_CHIME_SENSORS] = user_input.get(CONF_CHIME_SENSORS, [])
+            self._opts[CONF_CHIME_TONE]    = user_input.get(CONF_CHIME_TONE, "")
             return self.async_create_entry(title="", data=self._opts)
 
         return self.async_show_form(
@@ -377,6 +382,10 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
                         CONF_CHIME_SENSORS,
                         default=self._opts.get(CONF_CHIME_SENSORS, []),
                     ): _BINARY_SENSOR_SEL,
+                    vol.Optional(
+                        CONF_CHIME_TONE,
+                        default=self._opts.get(CONF_CHIME_TONE, ""),
+                    ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
                 }
             ),
         )
@@ -391,6 +400,7 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
             self._opts[CONF_TRIGGER_TIME] = int(user_input[CONF_TRIGGER_TIME])
             self._opts[CONF_DISARM_AFTER_TRIGGER] = user_input[CONF_DISARM_AFTER_TRIGGER]
             self._opts[CONF_SIREN_ENTITY] = user_input.get(CONF_SIREN_ENTITY) or ""
+            self._opts[CONF_SIREN_TONE]   = user_input.get(CONF_SIREN_TONE, "")
             return self.async_create_entry(title="", data=self._opts)
 
         return self.async_show_form(
@@ -417,6 +427,10 @@ class HaAlarmOptionsFlow(config_entries.OptionsFlow):
                     ): EntitySelector(EntitySelectorConfig(
                         domain=["switch", "script", "input_boolean", "siren"],
                     )),
+                    vol.Optional(
+                        CONF_SIREN_TONE,
+                        default=self._opts.get(CONF_SIREN_TONE, ""),
+                    ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
                 }
             ),
         )

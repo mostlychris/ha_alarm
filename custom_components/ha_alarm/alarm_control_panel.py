@@ -38,7 +38,9 @@ from .const import (
     CONF_NOTIFY_EVENTS,
     CONF_NOTIFY_TARGETS,
     CONF_SENSORS,
+    CONF_CHIME_TONE,
     CONF_SIREN_ENTITY,
+    CONF_SIREN_TONE,
     CONF_TRIGGER_TIME,
     DEFAULT_ENTRY_DELAY,
     DEFAULT_EXIT_DELAY,
@@ -220,12 +222,11 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
             self._notify_chime(new_state.entity_id)
 
     def _notify_chime(self, sensor_id: str) -> None:
-        cfg = self._cfg().get(CONF_NOTIFICATIONS, {})
-        targets: list[str] = cfg.get(CONF_NOTIFY_TARGETS, [])
-        if not targets:
-            return
+        cfg  = self._cfg()
+        notif_cfg = cfg.get(CONF_NOTIFICATIONS, {})
+        targets: list[str] = notif_cfg.get(CONF_NOTIFY_TARGETS, [])
         state = self.hass.states.get(sensor_id)
-        name = state.attributes.get("friendly_name", sensor_id) if state else sensor_id
+        name  = state.attributes.get("friendly_name", sensor_id) if state else sensor_id
         for target in targets:
             parts = target.split(".", 1)
             if len(parts) == 2:
@@ -235,12 +236,33 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
                         {"message": f"Chime: {name} opened.", "title": "HA Alarm"},
                     )
                 )
+        # Play chime tone on siren entity if configured
+        entity     = cfg.get(CONF_SIREN_ENTITY, "")
+        chime_tone = cfg.get(CONF_CHIME_TONE, "")
+        if entity and chime_tone:
+            self.hass.async_create_task(
+                self.hass.services.async_call(
+                    "siren", "turn_on",
+                    {"entity_id": entity, "tone": chime_tone},
+                )
+            )
 
     # ----------------------------------------------------------------- siren
 
     def _siren_on(self) -> None:
-        entity = self._cfg().get(CONF_SIREN_ENTITY, "")
-        if entity:
+        cfg    = self._cfg()
+        entity = cfg.get(CONF_SIREN_ENTITY, "")
+        tone   = cfg.get(CONF_SIREN_TONE, "")
+        if not entity:
+            return
+        if tone:
+            self.hass.async_create_task(
+                self.hass.services.async_call(
+                    "siren", "turn_on",
+                    {"entity_id": entity, "tone": tone},
+                )
+            )
+        else:
             self.hass.async_create_task(
                 self.hass.services.async_call(
                     "homeassistant", "turn_on", {"entity_id": entity}

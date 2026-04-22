@@ -27,7 +27,9 @@ from .const import (
     CONF_DISARM_AFTER_TRIGGER,
     CONF_NOTIFICATIONS,
     CONF_SENSORS,
+    CONF_CHIME_TONE,
     CONF_SIREN_ENTITY,
+    CONF_SIREN_TONE,
     CONF_TRIGGER_TIME,
     DEFAULT_TRIGGER_TIME,
     DOMAIN,
@@ -102,8 +104,10 @@ class HaAlarmConfigView(HomeAssistantView):
             "trigger_time": cfg.get(CONF_TRIGGER_TIME, DEFAULT_TRIGGER_TIME),
             "disarm_after_trigger": cfg.get(CONF_DISARM_AFTER_TRIGGER, False),
             "siren_entity": cfg.get(CONF_SIREN_ENTITY, ""),
+            "siren_tone": cfg.get(CONF_SIREN_TONE, ""),
             "chime_mode": cfg.get(CONF_CHIME_MODE, False),
             "chime_sensors": cfg.get(CONF_CHIME_SENSORS, []),
+            "chime_tone": cfg.get(CONF_CHIME_TONE, ""),
             "bypassed_sensors": bypasses_out,
         })
 
@@ -168,6 +172,7 @@ class HaAlarmGeneralView(HomeAssistantView):
         opts[CONF_TRIGGER_TIME] = int(data.get("trigger_time", DEFAULT_TRIGGER_TIME))
         opts[CONF_DISARM_AFTER_TRIGGER] = bool(data.get("disarm_after_trigger", False))
         opts[CONF_SIREN_ENTITY] = str(data.get("siren_entity", ""))
+        opts[CONF_SIREN_TONE]   = str(data.get("siren_tone", ""))
         _update(hass, entry, opts)
         return self.json({"ok": True})
 
@@ -183,8 +188,9 @@ class HaAlarmChimeView(HomeAssistantView):
             return self.json_message("No alarm configured", 404)
         data = await request.json()
         opts = _merged(entry)
-        opts[CONF_CHIME_MODE] = bool(data.get("chime_mode", False))
+        opts[CONF_CHIME_MODE]    = bool(data.get("chime_mode", False))
         opts[CONF_CHIME_SENSORS] = list(data.get("chime_sensors", []))
+        opts[CONF_CHIME_TONE]    = str(data.get("chime_tone", ""))
         _update(hass, entry, opts)
         return self.json({"ok": True})
 

@@ -156,6 +156,12 @@ class HaAlarmPanel extends HTMLElement {
     <div class="divider"></div>
     <p class="sub-heading">Chime Sensors</p>
     <div id="chime-sensor-list" class="sensor-list"><p class="muted">Loading…</p></div>
+    <div class="divider"></div>
+    <div class="field-row">
+      <label>Chime tone</label>
+      <input type="text" id="chime-tone" placeholder='e.g. 5 (tone played on siren entity when chime fires)'>
+    </div>
+    <p class="muted small" style="margin-bottom:12px">Tone ID passed to siren.turn_on when a chime sensor opens. Requires the siren entity above to be set.</p>
     <div class="row-end"><button class="btn" id="save-chime">Save Chime Settings</button></div>
   `)}
 
@@ -183,9 +189,13 @@ class HaAlarmPanel extends HTMLElement {
     <div class="divider"></div>
     <div class="field-row">
       <label>Siren entity</label>
-      <input type="text" id="siren-entity" placeholder="switch.alarm_siren (optional)">
+      <input type="text" id="siren-entity" placeholder="siren.alarm_siren (optional)">
     </div>
-    <p class="muted small" style="margin-bottom:12px">Switch, script, or siren entity turned on when alarm triggers, off when disarmed.</p>
+    <div class="field-row">
+      <label>Alarm tone</label>
+      <input type="text" id="siren-tone" placeholder='e.g. 23 (leave blank for default on/off)'>
+    </div>
+    <p class="muted small" style="margin-bottom:12px">Tone ID passed to siren.turn_on when alarm triggers. Leave blank to use homeassistant.turn_on (works for switches too).</p>
     <div class="row-end"><button class="btn" id="save-general">Save</button></div>
   `)}
 </div>
@@ -331,19 +341,39 @@ class HaAlarmPanel extends HTMLElement {
 
   // ── Bypass ────────────────────────────────────────────────────────────────
 
+  // Returns only sensors assigned to at least one arm mode
+  _modeSensors() {
+    const sensors = this._config?.sensors || {};
+    const seen    = new Set();
+    const result  = [];
+    Object.values(sensors).forEach(list => {
+      (list || []).forEach(id => {
+        if (!seen.has(id)) {
+          seen.add(id);
+          const state = this._hass.states[id];
+          result.push({ entity_id: id, attributes: state?.attributes || {} });
+        }
+      });
+    });
+    return result.sort((a, b) =>
+      (a.attributes.friendly_name || a.entity_id)
+        .localeCompare(b.attributes.friendly_name || b.entity_id)
+    );
+  }
+
   _populateBypasses() {
     const sr = this.shadowRoot;
 
-    // Populate sensor selector with all binary sensors
+    // Populate sensor selector — only sensors used in a mode
     const sel = sr.querySelector("#bypass-sensor-sel");
     if (sel) {
-      const sensors = this._binarySensors();
+      const sensors = this._modeSensors();
       sel.innerHTML = sensors.length
         ? sensors.map(s => {
             const name = s.attributes.friendly_name || s.entity_id;
             return `<option value="${s.entity_id}">${name}</option>`;
           }).join("")
-        : `<option value="">No sensors found</option>`;
+        : `<option value="">No mode sensors configured yet</option>`;
     }
 
     // List active bypasses
@@ -511,6 +541,8 @@ class HaAlarmPanel extends HTMLElement {
     const sr   = this.shadowRoot;
     const mode = sr.querySelector("#chime-mode");
     if (mode) mode.checked = this._config?.chime_mode === true;
+    const chimeTone = sr.querySelector("#chime-tone");
+    if (chimeTone) chimeTone.value = this._config?.chime_tone || "";
 
     const container   = sr.querySelector("#chime-sensor-list");
     if (!container) return;
@@ -535,10 +567,12 @@ class HaAlarmPanel extends HTMLElement {
     const sr          = this.shadowRoot;
     const chime_mode    = sr.querySelector("#chime-mode")?.checked ?? false;
     const chime_sensors = [...sr.querySelectorAll(".chime-cb:checked")].map(cb => cb.value);
-    await this._api("POST", "chime", { chime_mode, chime_sensors });
+    const chime_tone    = sr.querySelector("#chime-tone")?.value.trim() || "";
+    await this._api("POST", "chime", { chime_mode, chime_sensors, chime_tone });
     if (this._config) {
       this._config.chime_mode    = chime_mode;
       this._config.chime_sensors = chime_sensors;
+      this._config.chime_tone    = chime_tone;
     }
     this._toast("Chime settings saved ✓");
   }
@@ -555,6 +589,8 @@ class HaAlarmPanel extends HTMLElement {
     if (dat) dat.checked = this._config?.disarm_after_trigger === true;
     const siren = sr.querySelector("#siren-entity");
     if (siren) siren.value = this._config?.siren_entity || "";
+    const sirenTone = sr.querySelector("#siren-tone");
+    if (sirenTone) sirenTone.value = this._config?.siren_tone || "";
   }
 
   async _saveGeneral() {
@@ -564,6 +600,7 @@ class HaAlarmPanel extends HTMLElement {
       trigger_time:         parseInt(sr.querySelector("#trigger-time")?.value || "600", 10),
       disarm_after_trigger: sr.querySelector("#disarm-after-trigger")?.checked ?? false,
       siren_entity:         sr.querySelector("#siren-entity")?.value.trim() || "",
+      siren_tone:           sr.querySelector("#siren-tone")?.value.trim() || "",
     };
     await this._api("POST", "general", payload);
     if (this._config) Object.assign(this._config, payload);

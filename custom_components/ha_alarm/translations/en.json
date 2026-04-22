@@ -103,7 +103,8 @@
         "description": "When enabled, a notification is sent whenever a chime sensor opens while the alarm is disarmed.",
         "data": {
           "chime_mode": "Enable chime mode",
-          "chime_sensors": "Chime Sensors"
+          "chime_sensors": "Chime Sensors",
+          "chime_tone": "Chime tone ID (played on siren entity when chime fires)"
         }
       },
       "general": {
@@ -112,7 +113,8 @@
           "code_arm_required": "Require a code to arm (disarm always requires a code)",
           "trigger_time": "Trigger duration in seconds (0 = stay triggered indefinitely)",
           "disarm_after_trigger": "Disarm automatically after trigger duration (off = return to armed)",
-          "siren_entity": "Siren entity (turned on when triggered, off when disarmed)"
+          "siren_entity": "Siren entity (turned on when triggered, off when disarmed)",
+          "siren_tone": "Alarm tone ID (passed to siren.turn_on — leave blank to use generic turn on)"
         }
       }
     },

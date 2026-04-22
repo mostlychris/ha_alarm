@@ -30,6 +30,8 @@ CONF_CODE_ARM_REQUIRED = "code_arm_required"
 CONF_TRIGGER_TIME = "trigger_time"
 CONF_DISARM_AFTER_TRIGGER = "disarm_after_trigger"
 CONF_SIREN_ENTITY = "siren_entity"
+CONF_SIREN_TONE = "siren_tone"
+CONF_CHIME_TONE = "chime_tone"
 
 CONF_BYPASSED_SENSORS = "bypassed_sensors"
 BYPASS_ONE_CYCLE = 0    # cleared automatically on next disarm
