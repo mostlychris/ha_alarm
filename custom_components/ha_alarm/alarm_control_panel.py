@@ -39,8 +39,10 @@ from .const import (
     CONF_NOTIFY_TARGETS,
     CONF_SENSORS,
     CONF_CHIME_TONE,
+    CONF_CHIME_VOLUME,
     CONF_SIREN_ENTITY,
     CONF_SIREN_TONE,
+    CONF_SIREN_VOLUME,
     CONF_TRIGGER_TIME,
     DEFAULT_ENTRY_DELAY,
     DEFAULT_EXIT_DELAY,
@@ -227,11 +229,12 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         entity     = cfg.get(CONF_SIREN_ENTITY, "")
         chime_tone = cfg.get(CONF_CHIME_TONE, "")
         if entity and chime_tone:
+            data: dict = {"entity_id": entity, "tone": chime_tone}
+            vol = float(cfg.get(CONF_CHIME_VOLUME, 0.0))
+            if vol > 0.0:
+                data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
             self.hass.async_create_task(
-                self.hass.services.async_call(
-                    "siren", "turn_on",
-                    {"entity_id": entity, "tone": chime_tone},
-                )
+                self.hass.services.async_call("siren", "turn_on", data)
             )
 
     # ----------------------------------------------------------------- siren
@@ -243,11 +246,12 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         if not entity:
             return
         if tone:
+            data: dict = {"entity_id": entity, "tone": tone}
+            vol = float(cfg.get(CONF_SIREN_VOLUME, 0.0))
+            if vol > 0.0:
+                data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
             self.hass.async_create_task(
-                self.hass.services.async_call(
-                    "siren", "turn_on",
-                    {"entity_id": entity, "tone": tone},
-                )
+                self.hass.services.async_call("siren", "turn_on", data)
             )
         else:
             self.hass.async_create_task(

@@ -28,6 +28,9 @@ const EVENT_LABELS = {
 const BYPASS_ONE_CYCLE = 0;
 const BYPASS_INDEFINITE = -1;
 
+// Entity domains that can act as a siren/output device
+const SIREN_DOMAINS = ["siren", "switch", "script", "media_player", "input_boolean"];
+
 class HaAlarmPanel extends HTMLElement {
   constructor() {
     super();
@@ -72,6 +75,7 @@ class HaAlarmPanel extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>${CSS}</style>
 <div class="panel">
   <div class="page-header">
+    <button class="menu-btn" id="menu-btn" title="Toggle sidebar">&#9776;</button>
     <span class="page-title">Alarm Settings</span>
     <span class="badge disarmed" id="badge">Loading…</span>
   </div>
@@ -149,7 +153,7 @@ class HaAlarmPanel extends HTMLElement {
     <label class="toggle-row">
       <div>
         <div class="toggle-label">Enable chime mode</div>
-        <div class="muted small">Sends a notification when a chime sensor opens while the alarm is disarmed.</div>
+        <div class="muted small">Plays a tone on the siren entity when a chime sensor opens while the alarm is disarmed.</div>
       </div>
       <input type="checkbox" id="chime-mode">
     </label>
@@ -159,9 +163,14 @@ class HaAlarmPanel extends HTMLElement {
     <div class="divider"></div>
     <div class="field-row">
       <label>Chime tone</label>
-      <input type="text" id="chime-tone" placeholder='e.g. 5 (tone played on siren entity when chime fires)'>
+      <input type="text" id="chime-tone" placeholder='e.g. 5 (tone ID on siren entity)'>
     </div>
-    <p class="muted small" style="margin-bottom:12px">Tone ID passed to siren.turn_on when a chime sensor opens. Requires the siren entity above to be set.</p>
+    <div class="field-row vol-row">
+      <label>Chime volume</label>
+      <input type="range"  id="chime-volume"     min="0" max="1" step="0.05" value="0">
+      <input type="number" id="chime-volume-num" min="0" max="1" step="0.05" value="0" class="vol-num" placeholder="0–1">
+    </div>
+    <p class="muted small" style="margin-bottom:12px">Volume 0 = use device default. Enter 0–1 (e.g. 0.75). Requires a tone ID to be set.</p>
     <div class="row-end"><button class="btn" id="save-chime">Save Chime Settings</button></div>
   `)}
 
@@ -189,13 +198,18 @@ class HaAlarmPanel extends HTMLElement {
     <div class="divider"></div>
     <div class="field-row">
       <label>Siren entity</label>
-      <input type="text" id="siren-entity" placeholder="siren.alarm_siren (optional)">
+      <select id="siren-entity" class="sel-input"></select>
     </div>
     <div class="field-row">
       <label>Alarm tone</label>
-      <input type="text" id="siren-tone" placeholder='e.g. 23 (leave blank for default on/off)'>
+      <input type="text" id="siren-tone" placeholder='e.g. 23 (leave blank for generic on/off)'>
     </div>
-    <p class="muted small" style="margin-bottom:12px">Tone ID passed to siren.turn_on when alarm triggers. Leave blank to use homeassistant.turn_on (works for switches too).</p>
+    <div class="field-row vol-row">
+      <label>Alarm volume</label>
+      <input type="range"  id="siren-volume"     min="0" max="1" step="0.05" value="0">
+      <input type="number" id="siren-volume-num" min="0" max="1" step="0.05" value="0" class="vol-num" placeholder="0–1">
+    </div>
+    <p class="muted small" style="margin-bottom:12px">Tone and volume are passed to siren.turn_on. Without a tone, homeassistant.turn_on is used (works for switches too). Volume 0 = device default.</p>
     <div class="row-end"><button class="btn" id="save-general">Save</button></div>
   `)}
 </div>
@@ -220,6 +234,11 @@ class HaAlarmPanel extends HTMLElement {
   _wire() {
     const sr = this.shadowRoot;
 
+    // Sidebar toggle — fires HA's built-in toggle event
+    sr.querySelector("#menu-btn").addEventListener("click", () => {
+      window.dispatchEvent(new CustomEvent("hass-toggle-menu"));
+    });
+
     sr.querySelectorAll(".card-header").forEach(h => {
       h.addEventListener("click", () => {
         const body = sr.querySelector(`#body-${h.dataset.id}`);
@@ -238,6 +257,20 @@ class HaAlarmPanel extends HTMLElement {
       this._activeMode = tab.dataset.mode;
       this._renderSensors();
     });
+
+    // Volume sliders — keep range and number inputs in sync
+    const bindVolume = (sliderId, numId) => {
+      const slider = sr.querySelector(`#${sliderId}`);
+      const num    = sr.querySelector(`#${numId}`);
+      if (!slider || !num) return;
+      slider.addEventListener("input", () => { num.value = slider.value; });
+      num.addEventListener("input", () => {
+        const v = Math.min(1, Math.max(0, parseFloat(num.value) || 0));
+        slider.value = v;
+      });
+    };
+    bindVolume("siren-volume", "siren-volume-num");
+    bindVolume("chime-volume", "chime-volume-num");
 
     sr.querySelector("#save-sensors") .addEventListener("click", () => this._saveSensors());
     sr.querySelector("#add-bypass")   .addEventListener("click", () => this._addBypass());
@@ -295,6 +328,12 @@ class HaAlarmPanel extends HTMLElement {
     const suggested = classes ? all.filter(s => classes.includes(s.attributes.device_class)) : all;
     const others    = classes ? all.filter(s => !classes.includes(s.attributes.device_class)) : [];
 
+    // Selected sensors always float to the top within each group
+    const sortSelected = arr => [
+      ...arr.filter(s => selected.has(s.entity_id)),
+      ...arr.filter(s => !selected.has(s.entity_id)),
+    ];
+
     const row = s => {
       const name = s.attributes.friendly_name || s.entity_id;
       const dc   = s.attributes.device_class   || "—";
@@ -307,17 +346,19 @@ class HaAlarmPanel extends HTMLElement {
     };
 
     let html = "";
-    if (suggested.length) {
+    const sortedSuggested = sortSelected(suggested);
+    if (sortedSuggested.length) {
       html += `<div class="group-label">${classes ? "Suggested for this mode" : "All sensors"}</div>`;
-      html += suggested.map(row).join("");
+      html += sortedSuggested.map(row).join("");
     }
-    if (others.length) {
+    const sortedOthers = sortSelected(others);
+    if (sortedOthers.length) {
       const show = this._showOthers[this._activeMode];
       html += `<div class="group-label toggle-others" data-mode="${this._activeMode}">
-        Other sensors (${others.length}) ${show ? "▾" : "▸"}
+        Other sensors (${sortedOthers.length}) ${show ? "▾" : "▸"}
       </div>
       <div class="${show ? "" : "gone"}" id="others-${this._activeMode}">
-        ${others.map(row).join("")}
+        ${sortedOthers.map(row).join("")}
       </div>`;
     }
     if (!html) html = `<p class="muted">No binary sensors found in Home Assistant.</p>`;
@@ -341,7 +382,6 @@ class HaAlarmPanel extends HTMLElement {
 
   // ── Bypass ────────────────────────────────────────────────────────────────
 
-  // Returns only sensors assigned to at least one arm mode
   _modeSensors() {
     const sensors = this._config?.sensors || {};
     const seen    = new Set();
@@ -364,7 +404,6 @@ class HaAlarmPanel extends HTMLElement {
   _populateBypasses() {
     const sr = this.shadowRoot;
 
-    // Populate sensor selector — only sensors used in a mode
     const sel = sr.querySelector("#bypass-sensor-sel");
     if (sel) {
       const sensors = this._modeSensors();
@@ -376,7 +415,6 @@ class HaAlarmPanel extends HTMLElement {
         : `<option value="">No mode sensors configured yet</option>`;
     }
 
-    // List active bypasses
     const list = sr.querySelector("#bypass-list");
     if (!list) return;
     const bypasses = this._config?.bypassed_sensors || {};
@@ -541,8 +579,15 @@ class HaAlarmPanel extends HTMLElement {
     const sr   = this.shadowRoot;
     const mode = sr.querySelector("#chime-mode");
     if (mode) mode.checked = this._config?.chime_mode === true;
+
     const chimeTone = sr.querySelector("#chime-tone");
     if (chimeTone) chimeTone.value = this._config?.chime_tone || "";
+
+    const chimeVol = this._config?.chime_volume ?? 0;
+    const chimeSlider = sr.querySelector("#chime-volume");
+    const chimeNum    = sr.querySelector("#chime-volume-num");
+    if (chimeSlider) chimeSlider.value = chimeVol;
+    if (chimeNum)    chimeNum.value    = chimeVol;
 
     const container   = sr.querySelector("#chime-sensor-list");
     if (!container) return;
@@ -564,33 +609,78 @@ class HaAlarmPanel extends HTMLElement {
   }
 
   async _saveChime() {
-    const sr          = this.shadowRoot;
+    const sr           = this.shadowRoot;
     const chime_mode    = sr.querySelector("#chime-mode")?.checked ?? false;
     const chime_sensors = [...sr.querySelectorAll(".chime-cb:checked")].map(cb => cb.value);
     const chime_tone    = sr.querySelector("#chime-tone")?.value.trim() || "";
-    await this._api("POST", "chime", { chime_mode, chime_sensors, chime_tone });
+    const chime_volume  = parseFloat(sr.querySelector("#chime-volume-num")?.value || "0");
+    await this._api("POST", "chime", { chime_mode, chime_sensors, chime_tone, chime_volume });
     if (this._config) {
       this._config.chime_mode    = chime_mode;
       this._config.chime_sensors = chime_sensors;
       this._config.chime_tone    = chime_tone;
+      this._config.chime_volume  = chime_volume;
     }
     this._toast("Chime settings saved ✓");
   }
 
   // ── General ───────────────────────────────────────────────────────────────
 
+  _sirenEntities() {
+    return Object.values(this._hass.states)
+      .filter(s => SIREN_DOMAINS.some(d => s.entity_id.startsWith(d + ".")))
+      .sort((a, b) => (a.attributes.friendly_name || a.entity_id)
+        .localeCompare(b.attributes.friendly_name || b.entity_id));
+  }
+
   _populateGeneral() {
     const sr     = this.shadowRoot;
     const armReq = sr.querySelector("#arm-req");
     if (armReq) armReq.checked = this._config?.code_arm_required !== false;
+
     const tt = sr.querySelector("#trigger-time");
     if (tt) tt.value = this._config?.trigger_time ?? 600;
+
     const dat = sr.querySelector("#disarm-after-trigger");
     if (dat) dat.checked = this._config?.disarm_after_trigger === true;
-    const siren = sr.querySelector("#siren-entity");
-    if (siren) siren.value = this._config?.siren_entity || "";
+
+    // Populate siren entity dropdown
+    const sirenSel    = sr.querySelector("#siren-entity");
+    const currentSiren = this._config?.siren_entity || "";
+    if (sirenSel) {
+      const entities = this._sirenEntities();
+      const grouped  = {};
+      entities.forEach(e => {
+        const domain = e.entity_id.split(".")[0];
+        (grouped[domain] = grouped[domain] || []).push(e);
+      });
+      let opts = `<option value="">— None (no siren) —</option>`;
+      Object.entries(grouped).forEach(([domain, list]) => {
+        opts += `<optgroup label="${domain}">`;
+        list.forEach(e => {
+          const name = e.attributes.friendly_name || e.entity_id;
+          const sel  = e.entity_id === currentSiren ? " selected" : "";
+          opts += `<option value="${e.entity_id}"${sel}>${name} (${e.entity_id})</option>`;
+        });
+        opts += `</optgroup>`;
+      });
+      // If current value isn't in states, add it so we don't lose it
+      if (currentSiren && !entities.find(e => e.entity_id === currentSiren)) {
+        opts += `<option value="${currentSiren}" selected>${currentSiren}</option>`;
+      }
+      sirenSel.innerHTML = opts;
+    }
+
+    // Siren tone
     const sirenTone = sr.querySelector("#siren-tone");
     if (sirenTone) sirenTone.value = this._config?.siren_tone || "";
+
+    // Siren volume
+    const sirenVol    = this._config?.siren_volume ?? 0;
+    const sirenSlider = sr.querySelector("#siren-volume");
+    const sirenNum    = sr.querySelector("#siren-volume-num");
+    if (sirenSlider) sirenSlider.value = sirenVol;
+    if (sirenNum)    sirenNum.value    = sirenVol;
   }
 
   async _saveGeneral() {
@@ -599,8 +689,9 @@ class HaAlarmPanel extends HTMLElement {
       code_arm_required:    sr.querySelector("#arm-req")?.checked ?? true,
       trigger_time:         parseInt(sr.querySelector("#trigger-time")?.value || "600", 10),
       disarm_after_trigger: sr.querySelector("#disarm-after-trigger")?.checked ?? false,
-      siren_entity:         sr.querySelector("#siren-entity")?.value.trim() || "",
+      siren_entity:         sr.querySelector("#siren-entity")?.value || "",
       siren_tone:           sr.querySelector("#siren-tone")?.value.trim() || "",
+      siren_volume:         parseFloat(sr.querySelector("#siren-volume-num")?.value || "0"),
     };
     await this._api("POST", "general", payload);
     if (this._config) Object.assign(this._config, payload);
@@ -631,12 +722,21 @@ const CSS = `
   font-size:14px;
 }
 .page-header{display:flex;align-items:center;gap:12px;margin-bottom:20px}
-.page-title{font-size:22px;font-weight:400}
+.page-title{font-size:22px;font-weight:400;flex:1}
 .badge{padding:3px 12px;border-radius:12px;font-size:12px;font-weight:500}
 .badge.disarmed {background:#4caf5022;color:#4caf50}
 .badge.armed    {background:#2196f322;color:#2196f3}
 .badge.triggered{background:#f4433622;color:#f44336}
 .badge.pending  {background:#ff980022;color:#ff9800}
+
+.menu-btn{
+  background:transparent;border:none;
+  color:var(--primary-text-color,#e8e8e8);
+  font-size:20px;cursor:pointer;
+  padding:6px 8px;border-radius:6px;line-height:1;flex-shrink:0;
+  font-family:inherit;
+}
+.menu-btn:hover{background:var(--secondary-background-color,#1e2028)}
 
 .card{
   background:var(--card-background-color,#1c1e26);
@@ -712,7 +812,6 @@ const CSS = `
 .svc-row:last-child{border-bottom:none}
 .svc-name{flex:1;text-transform:capitalize}
 
-.bypass-form{}
 .sel-input{
   flex:1;background:var(--secondary-background-color,#1e2028);
   border:1px solid var(--divider-color,#383c4a);
@@ -729,6 +828,21 @@ const CSS = `
   border:1px solid var(--divider-color,#383c4a);
   color:var(--primary-text-color,#e8e8e8);
   padding:7px 10px;border-radius:6px;font-size:13px;font-family:inherit
+}
+
+/* Volume row — slider + number input */
+.vol-row{align-items:center}
+.vol-row input[type=range]{
+  flex:1;accent-color:var(--primary-color,#03a9f4);
+  height:4px;cursor:pointer;min-width:0
+}
+.vol-num{
+  width:68px;flex-shrink:0;
+  background:var(--secondary-background-color,#1e2028);
+  border:1px solid var(--divider-color,#383c4a);
+  color:var(--primary-text-color,#e8e8e8);
+  padding:5px 8px;border-radius:6px;font-size:13px;font-family:inherit;
+  text-align:right;
 }
 
 .event-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:4px 0 14px}

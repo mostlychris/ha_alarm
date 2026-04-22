@@ -40,6 +40,9 @@ BYPASS_INDEFINITE = -1  # until manually cleared
 CONF_CHIME_MODE = "chime_mode"
 CONF_CHIME_SENSORS = "chime_sensors"
 
+CONF_SIREN_VOLUME = "siren_volume"   # float 0.0-1.0; 0.0 = don't override device default
+CONF_CHIME_VOLUME = "chime_volume"   # float 0.0-1.0; 0.0 = don't override device default
+
 DEFAULT_TRIGGER_TIME = 600  # 10 minutes
 
 CONF_NOTIFICATIONS = "notifications"
