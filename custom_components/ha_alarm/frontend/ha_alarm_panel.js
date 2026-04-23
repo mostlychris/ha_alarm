@@ -35,11 +35,12 @@ class HaAlarmPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this._hass       = null;
-    this._config     = null;
-    this._activeMode = "armed_away";
-    this._showOthers = {};
-    this._ready      = false;
+    this._hass           = null;
+    this._config         = null;
+    this._activeMode     = "armed_away";
+    this._showOthers     = {};
+    this._pendingSensors = {};  // mode -> Set; tracks unsaved checkbox state across re-renders
+    this._ready          = false;
   }
 
   set hass(hass) {
@@ -322,7 +323,9 @@ class HaAlarmPanel extends HTMLElement {
     const sr        = this.shadowRoot;
     const container = sr.querySelector("#sensor-list");
     if (!container) return;
-    const selected  = new Set(this._config?.sensors?.[this._activeMode] || []);
+    // Use pending (unsaved) selections if the user has touched checkboxes since last save
+    const selected  = this._pendingSensors[this._activeMode]
+      ?? new Set(this._config?.sensors?.[this._activeMode] || []);
     const bypassed  = new Set(Object.keys(this._config?.bypassed_sensors || {}));
     const classes   = MODE_CLASSES[this._activeMode];
     const all       = this._binarySensors();
@@ -382,6 +385,15 @@ class HaAlarmPanel extends HTMLElement {
         this._renderSensors();
       })
     );
+
+    // Record checkbox changes into pending state so hass re-renders don't reset them
+    container.querySelectorAll(".s-cb").forEach(cb => {
+      cb.addEventListener("change", () => {
+        this._pendingSensors[this._activeMode] = new Set(
+          [...container.querySelectorAll(".s-cb:checked")].map(c => c.value)
+        );
+      });
+    });
   }
 
   async _saveSensors() {
@@ -389,6 +401,7 @@ class HaAlarmPanel extends HTMLElement {
     sensors[this._activeMode] = [...this.shadowRoot.querySelectorAll(".s-cb:checked")].map(cb => cb.value);
     await this._api("POST", "sensors", sensors);
     if (this._config) this._config.sensors = sensors;
+    delete this._pendingSensors[this._activeMode];
     this._toast("Sensors saved ✓");
   }
 
