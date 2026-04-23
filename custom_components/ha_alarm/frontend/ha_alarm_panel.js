@@ -328,30 +328,41 @@ class HaAlarmPanel extends HTMLElement {
     const suggested = classes ? all.filter(s => classes.includes(s.attributes.device_class)) : all;
     const others    = classes ? all.filter(s => !classes.includes(s.attributes.device_class)) : [];
 
-    // Selected sensors always float to the top within each group
-    const sortSelected = arr => [
-      ...arr.filter(s => selected.has(s.entity_id)),
-      ...arr.filter(s => !selected.has(s.entity_id)),
-    ];
+    // Sort: selected+open → selected+closed → unselected+open → unselected+closed
+    const isOpen = s => this._hass.states[s.entity_id]?.state === "on";
+    const sortSensors = arr => arr.slice().sort((a, b) => {
+      const asel = selected.has(a.entity_id), bsel = selected.has(b.entity_id);
+      const aopn = isOpen(a),                 bopn = isOpen(b);
+      const arank = asel && aopn ? 0 : asel ? 1 : aopn ? 2 : 3;
+      const brank = bsel && bopn ? 0 : bsel ? 1 : bopn ? 2 : 3;
+      if (arank !== brank) return arank - brank;
+      return (a.attributes.friendly_name || a.entity_id)
+        .localeCompare(b.attributes.friendly_name || b.entity_id);
+    });
 
     const row = s => {
-      const name = s.attributes.friendly_name || s.entity_id;
-      const dc   = s.attributes.device_class   || "—";
+      const name       = s.attributes.friendly_name || s.entity_id;
+      const dc         = s.attributes.device_class   || "—";
       const isBypassed = bypassed.has(s.entity_id);
-      return `<label class="sensor-row">
+      const open       = isOpen(s);
+      let chipHtml;
+      if (isBypassed)  chipHtml = `<span class="chip warn">bypassed</span>`;
+      else if (open)   chipHtml = `<span class="chip danger">open</span>`;
+      else             chipHtml = `<span class="chip">${dc}</span>`;
+      return `<label class="sensor-row${open ? " sensor-open" : ""}">
         <input type="checkbox" class="s-cb" value="${s.entity_id}" ${selected.has(s.entity_id) ? "checked" : ""}>
         <span class="s-name">${name}</span>
-        ${isBypassed ? `<span class="chip warn">bypassed</span>` : `<span class="chip">${dc}</span>`}
+        ${chipHtml}
       </label>`;
     };
 
     let html = "";
-    const sortedSuggested = sortSelected(suggested);
+    const sortedSuggested = sortSensors(suggested);
     if (sortedSuggested.length) {
       html += `<div class="group-label">${classes ? "Suggested for this mode" : "All sensors"}</div>`;
       html += sortedSuggested.map(row).join("");
     }
-    const sortedOthers = sortSelected(others);
+    const sortedOthers = sortSensors(others);
     if (sortedOthers.length) {
       const show = this._showOthers[this._activeMode];
       html += `<div class="group-label toggle-others" data-mode="${this._activeMode}">
@@ -791,6 +802,8 @@ const CSS = `
 }
 .chip.primary{background:var(--primary-color,#03a9f4)22;color:var(--primary-color,#03a9f4)}
 .chip.warn{background:#ff980022;color:#ff9800}
+.chip.danger{background:#f4433622;color:#f44336}
+.sensor-open{background:#f4433608;border-radius:4px}
 
 .dtable{width:100%;border-collapse:collapse;margin-top:12px}
 .dtable th{

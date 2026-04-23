@@ -374,6 +374,14 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
 
     # ---------------------------------------------------------- notifications
 
+    def _sensor_label(self, sensor_id: str | None) -> str:
+        if not sensor_id:
+            return "unknown"
+        state = self.hass.states.get(sensor_id)
+        if state:
+            return state.attributes.get("friendly_name") or sensor_id
+        return sensor_id
+
     def _notify(self, event: str, sensor_id: str | None = None) -> None:
         cfg = self._cfg().get(CONF_NOTIFICATIONS, {})
         if not cfg.get(CONF_NOTIFY_EVENTS, {}).get(event, False):
@@ -382,14 +390,15 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         if not targets:
             return
 
-        mode_label = (self._armed_mode or "").replace("_", " ").title()
+        mode_label   = (self._armed_mode or "").replace("_", " ").title()
+        sensor_label = self._sensor_label(sensor_id)
         messages = {
             EVENT_ARMING: f"Alarm arming in {mode_label} mode — exit now.",
             EVENT_ARMED: f"Alarm armed in {mode_label} mode.",
-            EVENT_TRIGGERED: f"ALARM TRIGGERED — sensor: {sensor_id or 'unknown'}.",
+            EVENT_TRIGGERED: f"ALARM TRIGGERED — sensor: {sensor_label}.",
             EVENT_DISARMED: "Alarm disarmed.",
             EVENT_DISARMING: "Alarm disarming.",
-            EVENT_PENDING: f"Entry detected — disarm now. Sensor: {sensor_id or 'unknown'}.",
+            EVENT_PENDING: f"Entry detected — disarm now. Sensor: {sensor_label}.",
             EVENT_FAILED: "Alarm action failed: invalid code.",
         }
         message = messages.get(event, f"Alarm event: {event}")
