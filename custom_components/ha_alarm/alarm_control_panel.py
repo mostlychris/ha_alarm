@@ -240,6 +240,14 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
 
     # ----------------------------------------------------------------- siren
 
+    def _dismiss_arm_blocked(self) -> None:
+        self.hass.async_create_task(
+            self.hass.services.async_call(
+                "persistent_notification", "dismiss",
+                {"notification_id": "ha_alarm_arm_blocked"},
+            )
+        )
+
     def _siren_on(self) -> None:
         cfg    = self._cfg()
         entity = cfg.get(CONF_SIREN_ENTITY, "")
@@ -425,6 +433,7 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         self._cancel_timer()
         self._unsubscribe_sensors()
         self._siren_off()
+        self._dismiss_arm_blocked()
         self._armed_mode = None
         self._set_state(AlarmControlPanelState.DISARMED)
         self._notify(EVENT_DISARMED)
@@ -444,10 +453,24 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
             if (s := self.hass.states.get(sid)) and s.state == "on"
         ]
         if open_sensors:
+            await self.hass.services.async_call(
+                "persistent_notification", "create",
+                {
+                    "title": "Alarm — Cannot Arm",
+                    "message": (
+                        "The following sensor(s) are open and must be closed or "
+                        "bypassed before arming:\n\n"
+                        + "\n".join(f"- {s}" for s in open_sensors)
+                    ),
+                    "notification_id": "ha_alarm_arm_blocked",
+                },
+            )
             raise HomeAssistantError(
                 f"Cannot arm — open sensor(s): {', '.join(open_sensors)}"
             )
 
+        # All checks passed — clear any prior arm-blocked notification
+        self._dismiss_arm_blocked()
         self._armed_mode = mode
         exit_delay = self._delay(mode, CONF_EXIT_DELAY)
         if exit_delay > 0:
