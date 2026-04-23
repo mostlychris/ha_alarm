@@ -538,7 +538,12 @@ class HaAlarmPanel extends HTMLElement {
     const container = this.shadowRoot.querySelector("#notif-services");
     if (container) {
       const notifySvcs = this._hass?.services?.notify || {};
-      const available  = Object.keys(notifySvcs).sort();
+      const available  = Object.keys(notifySvcs).sort((a, b) => {
+        const aOn = enabledTargets.has(`notify.${a}`);
+        const bOn = enabledTargets.has(`notify.${b}`);
+        if (aOn !== bOn) return aOn ? -1 : 1;
+        return a.localeCompare(b);
+      });
       if (!available.length) {
         container.innerHTML = `<p class="muted">No notify services found. Add a notification integration (e.g. Mobile App) first.</p>`;
       } else {
@@ -592,7 +597,13 @@ class HaAlarmPanel extends HTMLElement {
     const container   = sr.querySelector("#chime-sensor-list");
     if (!container) return;
     const chimeSensors = new Set(this._config?.chime_sensors || []);
-    const all          = this._binarySensors();
+    const all = this._binarySensors().sort((a, b) => {
+      const aOn = chimeSensors.has(a.entity_id);
+      const bOn = chimeSensors.has(b.entity_id);
+      if (aOn !== bOn) return aOn ? -1 : 1;
+      return (a.attributes.friendly_name || a.entity_id)
+        .localeCompare(b.attributes.friendly_name || b.entity_id);
+    });
     if (!all.length) {
       container.innerHTML = `<p class="muted">No binary sensors found.</p>`;
       return;
