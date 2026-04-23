@@ -50,6 +50,7 @@ class HaAlarmPanel extends HTMLElement {
       this._load();
     } else {
       this._refreshBadge();
+      if (this._config) this._renderSensors();
     }
   }
 
@@ -803,7 +804,7 @@ const CSS = `
 .chip.primary{background:var(--primary-color,#03a9f4)22;color:var(--primary-color,#03a9f4)}
 .chip.warn{background:#ff980022;color:#ff9800}
 .chip.danger{background:#f4433622;color:#f44336}
-.sensor-open{background:#f4433608;border-radius:4px}
+.sensor-open{background:#f4433618;border-radius:4px}
 
 .dtable{width:100%;border-collapse:collapse;margin-top:12px}
 .dtable th{
