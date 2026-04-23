@@ -6,6 +6,7 @@ import logging
 import time
 from typing import Any
 
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelEntity,
     AlarmControlPanelEntityFeature,
@@ -437,12 +438,15 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
                 self._notify(EVENT_FAILED)
                 return
 
-        for sensor_id in self._sensors_for_mode(mode):
-            state = self.hass.states.get(sensor_id)
-            if state and state.state == "on":
-                _LOGGER.warning("Cannot arm — sensor %s is open", sensor_id)
-                self._notify(EVENT_FAILED)
-                return
+        open_sensors = [
+            self._sensor_label(sid)
+            for sid in self._sensors_for_mode(mode)
+            if (s := self.hass.states.get(sid)) and s.state == "on"
+        ]
+        if open_sensors:
+            raise HomeAssistantError(
+                f"Cannot arm — open sensor(s): {', '.join(open_sensors)}"
+            )
 
         self._armed_mode = mode
         exit_delay = self._delay(mode, CONF_EXIT_DELAY)

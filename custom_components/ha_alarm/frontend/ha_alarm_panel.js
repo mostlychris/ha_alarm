@@ -51,7 +51,10 @@ class HaAlarmPanel extends HTMLElement {
       this._load();
     } else {
       this._refreshBadge();
-      if (this._config) this._renderSensors();
+      if (this._config) {
+        this._renderSensors();
+        this._refreshOpenWarning();
+      }
     }
   }
 
@@ -80,6 +83,13 @@ class HaAlarmPanel extends HTMLElement {
     <button class="menu-btn" id="menu-btn" title="Toggle sidebar">&#9776;</button>
     <span class="page-title">Alarm Settings</span>
     <span class="badge disarmed" id="badge">Loading…</span>
+  </div>
+  <div id="open-warning" class="open-warning gone">
+    <span class="warn-icon">⚠</span>
+    <div>
+      <div class="warn-title">Open sensors — arming will be blocked</div>
+      <div id="open-warning-detail" class="warn-detail"></div>
+    </div>
   </div>
 
   ${this._card("sensors", "Sensors", `
@@ -287,6 +297,7 @@ class HaAlarmPanel extends HTMLElement {
 
   _populate() {
     this._refreshBadge();
+    this._refreshOpenWarning();
     this._renderSensors();
     this._populateBypasses();
     this._populateDelays();
@@ -308,6 +319,35 @@ class HaAlarmPanel extends HTMLElement {
       state === "triggered" ? "triggered" :
       state === "arming" || state === "pending" ? "pending" : "armed"
     );
+  }
+
+  _refreshOpenWarning() {
+    const banner = this.shadowRoot.querySelector("#open-warning");
+    const detail = this.shadowRoot.querySelector("#open-warning-detail");
+    if (!banner || !detail || !this._config) return;
+
+    const bypassed = new Set(Object.keys(this._config.bypassed_sensors || {}));
+    const affected = [];
+
+    MODES.forEach(m => {
+      const assigned = this._config.sensors?.[m.key] || [];
+      const open = assigned.filter(id =>
+        !bypassed.has(id) && this._hass.states[id]?.state === "on"
+      );
+      if (open.length) {
+        const names = open.map(id =>
+          this._hass.states[id]?.attributes?.friendly_name || id
+        ).join(", ");
+        affected.push(`<span class="warn-mode">${m.label}:</span> ${names}`);
+      }
+    });
+
+    if (!affected.length) {
+      banner.classList.add("gone");
+      return;
+    }
+    banner.classList.remove("gone");
+    detail.innerHTML = affected.join("<br>");
   }
 
   // ── Sensors ───────────────────────────────────────────────────────────────
@@ -764,6 +804,17 @@ const CSS = `
 .badge.armed    {background:#2196f322;color:#2196f3}
 .badge.triggered{background:#f4433622;color:#f44336}
 .badge.pending  {background:#ff980022;color:#ff9800}
+
+.open-warning{
+  display:flex;align-items:flex-start;gap:10px;
+  background:#f4433618;border:1px solid #f4433640;
+  border-radius:10px;padding:12px 16px;margin-bottom:14px;
+  font-size:13px;line-height:1.5;
+}
+.warn-icon{font-size:18px;flex-shrink:0;margin-top:1px}
+.warn-title{font-weight:500;color:#f44336;margin-bottom:2px}
+.warn-detail{color:var(--primary-text-color,#e8e8e8)}
+.warn-mode{font-weight:500;color:var(--secondary-text-color,#9095a5)}
 
 .menu-btn{
   background:transparent;border:none;
