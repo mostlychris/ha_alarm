@@ -45,6 +45,11 @@ class HaAlarmPanel extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    const menuBtn = this.shadowRoot.querySelector('#ha-menu-btn');
+    if (menuBtn) {
+      menuBtn.hass = hass;
+      menuBtn.narrow = true;
+    }
     if (!this._ready) {
       this._ready = true;
       this._build();
@@ -78,12 +83,13 @@ class HaAlarmPanel extends HTMLElement {
 
   _build() {
     this.shadowRoot.innerHTML = `<style>${CSS}</style>
-<div class="panel">
-  <div class="page-header">
-    <button class="menu-btn" id="menu-btn" title="Toggle sidebar">&#9776;</button>
-    <span class="page-title">Alarm Settings</span>
-    <span class="badge disarmed" id="badge">Loading…</span>
-  </div>
+<ha-app-layout>
+  <ha-top-app-bar-fixed slot="header">
+    <ha-menu-button id="ha-menu-btn" slot="navigationIcon"></ha-menu-button>
+    <div slot="title">Alarm Settings</div>
+    <span class="badge disarmed" id="badge" slot="actionItems">Loading…</span>
+  </ha-top-app-bar-fixed>
+  <div class="panel">
   <div id="open-warning" class="open-warning gone">
     <span class="warn-icon">⚠</span>
     <div>
@@ -224,7 +230,8 @@ class HaAlarmPanel extends HTMLElement {
     <p class="muted small" style="margin-bottom:12px">Tone and volume are passed to siren.turn_on. Without a tone, homeassistant.turn_on is used (works for switches too). Volume 0 = device default.</p>
     <div class="row-end"><button class="btn" id="save-general">Save</button></div>
   `)}
-</div>
+  </div>
+</ha-app-layout>
 <div id="toast" class="toast gone"></div>`;
 
     this._wire();
@@ -245,11 +252,6 @@ class HaAlarmPanel extends HTMLElement {
 
   _wire() {
     const sr = this.shadowRoot;
-
-    // Sidebar toggle — fires HA's built-in toggle event
-    sr.querySelector("#menu-btn").addEventListener("click", () => {
-      window.dispatchEvent(new CustomEvent("hass-toggle-menu"));
-    });
 
     sr.querySelectorAll(".card-header").forEach(h => {
       h.addEventListener("click", () => {
@@ -790,16 +792,14 @@ class HaAlarmPanel extends HTMLElement {
 
 const CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
-:host{display:block}
+:host{display:block;height:100%}
 .panel{
   max-width:860px;margin:0 auto;padding:20px 16px;
   font-family:var(--paper-font-body1_-_font-family,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif);
   color:var(--primary-text-color,#e8e8e8);
   font-size:14px;
 }
-.page-header{display:flex;align-items:center;gap:12px;margin-bottom:20px}
-.page-title{font-size:22px;font-weight:400;flex:1}
-.badge{padding:3px 12px;border-radius:12px;font-size:12px;font-weight:500}
+.badge{padding:3px 12px;border-radius:12px;font-size:12px;font-weight:500;align-self:center}
 .badge.disarmed {background:#4caf5022;color:#4caf50}
 .badge.armed    {background:#2196f322;color:#2196f3}
 .badge.triggered{background:#f4433622;color:#f44336}
@@ -815,15 +815,6 @@ const CSS = `
 .warn-title{font-weight:500;color:#f44336;margin-bottom:2px}
 .warn-detail{color:var(--primary-text-color,#e8e8e8)}
 .warn-mode{font-weight:500;color:var(--secondary-text-color,#9095a5)}
-
-.menu-btn{
-  background:transparent;border:none;
-  color:var(--primary-text-color,#e8e8e8);
-  font-size:20px;cursor:pointer;
-  padding:6px 8px;border-radius:6px;line-height:1;flex-shrink:0;
-  font-family:inherit;
-}
-.menu-btn:hover{background:var(--secondary-background-color,#1e2028)}
 
 .card{
   background:var(--card-background-color,#1c1e26);
