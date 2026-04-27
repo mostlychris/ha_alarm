@@ -45,11 +45,6 @@ class HaAlarmPanel extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    const menuBtn = this.shadowRoot.querySelector('#ha-menu-btn');
-    if (menuBtn) {
-      menuBtn.hass = hass;
-      menuBtn.narrow = true;
-    }
     if (!this._ready) {
       this._ready = true;
       this._build();
@@ -85,7 +80,6 @@ class HaAlarmPanel extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>${CSS}</style>
 <ha-app-layout>
   <ha-top-app-bar-fixed slot="header">
-    <ha-menu-button id="ha-menu-btn" slot="navigationIcon"></ha-menu-button>
     <div slot="title">Alarm Settings</div>
     <span class="badge disarmed" id="badge" slot="actionItems">Loading…</span>
   </ha-top-app-bar-fixed>
