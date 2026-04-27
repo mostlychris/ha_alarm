@@ -78,12 +78,11 @@ class HaAlarmPanel extends HTMLElement {
 
   _build() {
     this.shadowRoot.innerHTML = `<style>${CSS}</style>
-<ha-app-layout>
-  <ha-top-app-bar-fixed slot="header">
-    <div slot="title">Alarm Settings</div>
-    <span class="badge disarmed" id="badge" slot="actionItems">Loading…</span>
-  </ha-top-app-bar-fixed>
-  <div class="panel">
+<div class="panel">
+  <div class="panel-header">
+    <span class="page-title">Alarm Settings</span>
+    <span class="badge disarmed" id="badge">Loading…</span>
+  </div>
   <div id="open-warning" class="open-warning gone">
     <span class="warn-icon">⚠</span>
     <div>
@@ -224,8 +223,7 @@ class HaAlarmPanel extends HTMLElement {
     <p class="muted small" style="margin-bottom:12px">Tone and volume are passed to siren.turn_on. Without a tone, homeassistant.turn_on is used (works for switches too). Volume 0 = device default.</p>
     <div class="row-end"><button class="btn" id="save-general">Save</button></div>
   `)}
-  </div>
-</ha-app-layout>
+</div>
 <div id="toast" class="toast gone"></div>`;
 
     this._wire();
@@ -236,9 +234,9 @@ class HaAlarmPanel extends HTMLElement {
     return `
 <div class="card">
   <div class="card-header" data-id="${id}">
-    <span>${title}</span><span class="chevron" id="chev-${id}">▾</span>
+    <span>${title}</span><span class="chevron" id="chev-${id}">▸</span>
   </div>
-  <div class="card-body" id="body-${id}">${body}</div>
+  <div class="card-body closed" id="body-${id}">${body}</div>
 </div>`;
   }
 
@@ -786,14 +784,16 @@ class HaAlarmPanel extends HTMLElement {
 
 const CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
-:host{display:block;height:100%}
+:host{display:block}
 .panel{
   max-width:860px;margin:0 auto;padding:20px 16px;
   font-family:var(--paper-font-body1_-_font-family,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif);
   color:var(--primary-text-color,#e8e8e8);
   font-size:14px;
 }
-.badge{padding:3px 12px;border-radius:12px;font-size:12px;font-weight:500;align-self:center}
+.panel-header{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.page-title{font-size:22px;font-weight:400;flex:1}
+.badge{padding:3px 12px;border-radius:12px;font-size:12px;font-weight:500}
 .badge.disarmed {background:#4caf5022;color:#4caf50}
 .badge.armed    {background:#2196f322;color:#2196f3}
 .badge.triggered{background:#f4433622;color:#f44336}
