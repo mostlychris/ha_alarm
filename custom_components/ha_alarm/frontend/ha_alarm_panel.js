@@ -483,10 +483,10 @@ class HaAlarmPanel extends HTMLElement {
       if (!ids.length) return;
       any = true;
       const chips = ids.map(id => {
-        const state  = this._hass.states[id];
-        const name   = state?.attributes?.friendly_name || id;
-        const open   = state?.state === "on";
-        return `<span class="chip${open ? " danger" : ""}">${name}</span>`;
+        const state = this._hass.states[id];
+        const name  = state?.attributes?.friendly_name || id;
+        const open  = state?.state === "on";
+        return `<button class="summary-chip${open ? " danger" : ""}" data-mode="${m.key}" data-id="${id}" title="Remove from ${m.label}">${name} <span class="chip-x">×</span></button>`;
       }).join("");
       html += `<div class="summary-group">
         <div class="sub-heading">${m.label} <span class="muted">(${ids.length})</span></div>
@@ -494,6 +494,20 @@ class HaAlarmPanel extends HTMLElement {
       </div>`;
     });
     el.innerHTML = any ? html : `<p class="muted">No sensors configured yet.</p>`;
+    el.querySelectorAll(".summary-chip").forEach(btn =>
+      btn.addEventListener("click", () => this._removeSensorFromMode(btn.dataset.mode, btn.dataset.id))
+    );
+  }
+
+  async _removeSensorFromMode(mode, sensorId) {
+    const sensors = { ...(this._config?.sensors || {}) };
+    sensors[mode] = (sensors[mode] || []).filter(id => id !== sensorId);
+    await this._api("POST", "sensors", sensors);
+    if (this._config) this._config.sensors = sensors;
+    delete this._pendingSensors[mode];
+    this._populateSensorSummary();
+    if (this._activeMode === mode) this._renderSensors();
+    this._toast("Sensor removed ✓");
   }
 
   // ── Bypass ────────────────────────────────────────────────────────────────
@@ -1031,6 +1045,18 @@ const CSS = `
 .muted{color:var(--secondary-text-color,#9095a5)}
 .summary-group{margin-bottom:16px}
 .summary-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.summary-chip{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:12px;font-family:inherit;
+  background:var(--secondary-background-color,#1e2028);
+  border:1px solid var(--divider-color,#383c4a);
+  color:var(--primary-text-color,#e8e8e8);
+  padding:3px 8px;border-radius:8px;white-space:nowrap;cursor:pointer;
+}
+.summary-chip:hover{border-color:var(--error-color,#f44336);background:#f4433614}
+.summary-chip.danger{background:#f4433618;border-color:#f4433640;color:#f44336}
+.chip-x{font-size:14px;line-height:1;color:var(--secondary-text-color,#9095a5)}
+.summary-chip:hover .chip-x{color:var(--error-color,#f44336)}
 .small{font-size:12px;margin-top:3px}
 .gone{display:none}
 
