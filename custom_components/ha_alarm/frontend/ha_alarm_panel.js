@@ -29,8 +29,8 @@ const DEFAULT_MESSAGES = {
   arming:    "Alarm arming in {mode} mode — exit now.",
   armed:     "Alarm armed in {mode} mode.",
   triggered: "ALARM TRIGGERED — sensor: {sensor}.",
-  disarmed:  "Alarm disarmed.",
-  disarming: "Alarm disarming.",
+  disarmed:  "Alarm disarmed by {user}.",
+  disarming: "Alarm disarming — initiated by {user}.",
   pending:   "Entry detected — disarm now. Sensor: {sensor}.",
   failed:    "Alarm action failed: invalid code.",
 };
@@ -175,7 +175,7 @@ class HaAlarmPanel extends HTMLElement {
     </label>
     <div class="divider" style="margin:16px 0"></div>
     <p class="sub-heading">Events &amp; Messages</p>
-    <p class="muted small" style="margin-bottom:10px">Leave message blank to use the default. Use <code>{mode}</code> and <code>{sensor}</code> as placeholders.</p>
+    <p class="muted small" style="margin-bottom:10px">Leave message blank to use the default. Available placeholders: <code>{mode}</code>, <code>{sensor}</code>, <code>{user}</code>.</p>
     <div class="event-blocks">
       ${ALL_EVENTS.map(e => `
       <div class="event-block">

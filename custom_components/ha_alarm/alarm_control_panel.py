@@ -175,12 +175,12 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         default = DEFAULT_ENTRY_DELAY if delay_key == CONF_ENTRY_DELAY else DEFAULT_EXIT_DELAY
         return self._cfg().get(CONF_DELAYS, {}).get(mode, {}).get(delay_key, default)
 
-    def _validate_code(self, code: str) -> tuple[bool, bool]:
+    def _validate_code(self, code: str) -> tuple[bool, bool, str]:
         for user in self._cfg().get(CONF_CODES, []):
             salt = user.get(CONF_CODE_SALT, "")
             if _hash_code(code, salt) == user.get(CONF_CODE_VALUE, ""):
-                return True, user.get(CONF_CODE_IS_ADMIN, False)
-        return False, False
+                return True, user.get(CONF_CODE_IS_ADMIN, False), user.get(CONF_CODE_NAME, "")
+        return False, False, ""
 
     # ------------------------------------------------------- sensor tracking
 
@@ -393,7 +393,7 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
             return state.attributes.get("friendly_name") or sensor_id
         return sensor_id
 
-    def _notify(self, event: str, sensor_id: str | None = None) -> None:
+    def _notify(self, event: str, sensor_id: str | None = None, user: str | None = None) -> None:
         cfg = self._cfg().get(CONF_NOTIFICATIONS, {})
         if not cfg.get(CONF_NOTIFY_EVENTS, {}).get(event, False):
             return
@@ -403,19 +403,28 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
 
         mode_label   = (self._armed_mode or "").replace("_", " ").title()
         sensor_label = self._sensor_label(sensor_id)
+        user_label   = user or ""
 
+        disarmed_default = (
+            f"Alarm disarmed by {user_label}." if user_label else "Alarm disarmed."
+        )
         defaults = {
             EVENT_ARMING:    f"Alarm arming in {mode_label} mode — exit now.",
             EVENT_ARMED:     f"Alarm armed in {mode_label} mode.",
             EVENT_TRIGGERED: f"ALARM TRIGGERED — sensor: {sensor_label}.",
-            EVENT_DISARMED:  "Alarm disarmed.",
-            EVENT_DISARMING: "Alarm disarming.",
+            EVENT_DISARMED:  disarmed_default,
+            EVENT_DISARMING: f"Alarm disarming{f' — initiated by {user_label}' if user_label else ''}.",
             EVENT_PENDING:   f"Entry detected — disarm now. Sensor: {sensor_label}.",
             EVENT_FAILED:    "Alarm action failed: invalid code.",
         }
         raw = cfg.get(CONF_NOTIFY_MESSAGES, {}).get(event, "").strip()
         if raw:
-            message = raw.replace("{mode}", mode_label).replace("{sensor}", sensor_label)
+            message = (
+                raw
+                .replace("{mode}", mode_label)
+                .replace("{sensor}", sensor_label)
+                .replace("{user}", user_label)
+            )
         else:
             message = defaults.get(event, f"Alarm event: {event}")
 
@@ -437,24 +446,24 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
     # -------------------------------------------------- alarm control panel
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:
-        valid, _ = self._validate_code(code or "")
+        valid, _, user_name = self._validate_code(code or "")
         if not valid:
             _LOGGER.warning("Invalid code supplied for disarm")
             self._notify(EVENT_FAILED)
             return
-        self._notify(EVENT_DISARMING)
+        self._notify(EVENT_DISARMING, user=user_name)
         self._cancel_timer()
         self._unsubscribe_sensors()
         self._siren_off()
         self._dismiss_arm_blocked()
         self._armed_mode = None
         self._set_state(AlarmControlPanelState.DISARMED)
-        self._notify(EVENT_DISARMED)
+        self._notify(EVENT_DISARMED, user=user_name)
         self._clear_cycle_bypasses()
 
     async def _arm(self, mode: str, code: str | None) -> None:
         if self._cfg().get(CONF_CODE_ARM_REQUIRED, True):
-            valid, _ = self._validate_code(code or "")
+            valid, _, _ = self._validate_code(code or "")
             if not valid:
                 _LOGGER.warning("Invalid code supplied for arm")
                 self._notify(EVENT_FAILED)
