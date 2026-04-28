@@ -41,17 +41,6 @@ class HaAlarmPanel extends HTMLElement {
     this._showOthers     = {};
     this._pendingSensors = {};  // mode -> Set; tracks unsaved checkbox state across re-renders
     this._ready          = false;
-    this._narrow         = false;
-  }
-
-  set narrow(narrow) {
-    this._narrow = narrow;
-    this._syncNarrow();
-  }
-
-  _syncNarrow() {
-    const btn = this.shadowRoot?.querySelector("#menu-btn");
-    if (btn) btn.classList.toggle("gone", !this._narrow);
   }
 
   set hass(hass) {
@@ -89,12 +78,12 @@ class HaAlarmPanel extends HTMLElement {
 
   _build() {
     this.shadowRoot.innerHTML = `<style>${CSS}</style>
+<div class="app-header">
+  <button class="menu-btn" id="menu-btn" title="Open sidebar">&#9776;</button>
+  <span class="header-title">Alarm Settings</span>
+  <span class="badge disarmed" id="badge">Loading…</span>
+</div>
 <div class="panel">
-  <div class="panel-header">
-    <button class="menu-btn gone" id="menu-btn" title="Open sidebar">&#9776;</button>
-    <span class="page-title">Alarm Settings</span>
-    <span class="badge disarmed" id="badge">Loading…</span>
-  </div>
   <div id="open-warning" class="open-warning gone">
     <span class="warn-icon">⚠</span>
     <div>
@@ -240,7 +229,6 @@ class HaAlarmPanel extends HTMLElement {
 
     this._wire();
     this._refreshBadge();
-    this._syncNarrow();
   }
 
   _card(id, title, body) {
@@ -808,17 +796,25 @@ const CSS = `
   color:var(--primary-text-color,#e8e8e8);
   font-size:14px;
 }
-.panel-header{display:flex;align-items:center;gap:12px;margin-bottom:20px}
-.page-title{font-size:22px;font-weight:400;flex:1}
+.app-header{
+  position:sticky;top:0;z-index:4;
+  display:flex;align-items:center;gap:4px;
+  padding:0 16px 0 4px;height:56px;
+  background:var(--app-header-background-color,var(--primary-color,#03a9f4));
+  color:var(--app-header-text-color,#fff);
+  box-shadow:0 2px 4px rgba(0,0,0,.14),0 1px 10px rgba(0,0,0,.12),0 2px 4px rgba(0,0,0,.2);
+}
+.header-title{flex:1;font-size:20px;font-weight:400;color:var(--app-header-text-color,#fff)}
 .badge{padding:3px 12px;border-radius:12px;font-size:12px;font-weight:500}
 .menu-btn{
   background:transparent;border:none;
-  color:var(--primary-text-color,#e8e8e8);
+  color:var(--app-header-text-color,#fff);
   font-size:20px;cursor:pointer;
-  padding:6px 8px;border-radius:6px;line-height:1;flex-shrink:0;
-  font-family:inherit;
+  width:48px;height:48px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;font-family:inherit;
 }
-.menu-btn:hover{background:var(--secondary-background-color,#1e2028)}
+.menu-btn:hover{background:rgba(255,255,255,.12)}
 .badge.disarmed {background:#4caf5022;color:#4caf50}
 .badge.armed    {background:#2196f322;color:#2196f3}
 .badge.triggered{background:#f4433622;color:#f44336}
