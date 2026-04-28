@@ -48,6 +48,8 @@ DEFAULT_TRIGGER_TIME = 600  # 10 minutes
 CONF_NOTIFICATIONS = "notifications"
 CONF_NOTIFY_TARGETS = "notify_targets"
 CONF_NOTIFY_EVENTS = "notify_events"
+CONF_NOTIFY_HIGH_PRIORITY = "high_priority"
+CONF_NOTIFY_MESSAGES = "messages"
 
 # Notification events
 EVENT_ARMING = "arming"

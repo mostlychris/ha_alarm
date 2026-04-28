@@ -25,6 +25,16 @@ const EVENT_LABELS = {
   failed:    "Invalid code attempt",
 };
 
+const DEFAULT_MESSAGES = {
+  arming:    "Alarm arming in {mode} mode — exit now.",
+  armed:     "Alarm armed in {mode} mode.",
+  triggered: "ALARM TRIGGERED — sensor: {sensor}.",
+  disarmed:  "Alarm disarmed.",
+  disarming: "Alarm disarming.",
+  pending:   "Entry detected — disarm now. Sensor: {sensor}.",
+  failed:    "Alarm action failed: invalid code.",
+};
+
 const BYPASS_ONE_CYCLE = 0;
 const BYPASS_INDEFINITE = -1;
 
@@ -155,13 +165,28 @@ class HaAlarmPanel extends HTMLElement {
       <p class="muted">Loading available notify services…</p>
     </div>
     <p class="muted small" style="margin-top:6px">Select which Home Assistant notify services receive alarm notifications.</p>
-    <p class="sub-heading" style="margin-top:16px">Notify on Events</p>
-    <div class="event-grid">
+    <div class="divider" style="margin:16px 0"></div>
+    <label class="toggle-row">
+      <div>
+        <div class="toggle-label">High priority</div>
+        <div class="muted small">Android: ttl=0 / priority=high &nbsp;·&nbsp; iOS: time-sensitive interruption level</div>
+      </div>
+      <input type="checkbox" id="notif-high-priority">
+    </label>
+    <div class="divider" style="margin:16px 0"></div>
+    <p class="sub-heading">Events &amp; Messages</p>
+    <p class="muted small" style="margin-bottom:10px">Leave message blank to use the default. Use <code>{mode}</code> and <code>{sensor}</code> as placeholders.</p>
+    <div class="event-blocks">
       ${ALL_EVENTS.map(e => `
-      <label class="event-row">
-        <input type="checkbox" class="ev-cb" data-event="${e}">
-        <span>${EVENT_LABELS[e]}</span>
-      </label>`).join("")}
+      <div class="event-block">
+        <label class="event-block-header">
+          <input type="checkbox" class="ev-cb" data-event="${e}">
+          <span class="event-label">${EVENT_LABELS[e]}</span>
+        </label>
+        <div class="event-msg-row">
+          <input type="text" class="ev-msg" data-event="${e}" placeholder="${DEFAULT_MESSAGES[e]}">
+        </div>
+      </div>`).join("")}
     </div>
     <div class="row-end"><button class="btn" id="save-notif">Save Notifications</button></div>
   `)}
@@ -651,21 +676,34 @@ class HaAlarmPanel extends HTMLElement {
       }
     }
 
+    const hp = this.shadowRoot.querySelector("#notif-high-priority");
+    if (hp) hp.checked = n.high_priority === true;
+
     const evts = n.notify_events || {};
+    const msgs = n.messages      || {};
     this.shadowRoot.querySelectorAll(".ev-cb").forEach(cb => {
       cb.checked = evts[cb.dataset.event] !== false;
+    });
+    this.shadowRoot.querySelectorAll(".ev-msg").forEach(inp => {
+      inp.value = msgs[inp.dataset.event] || "";
     });
   }
 
   async _saveNotif() {
-    const targets = [...this.shadowRoot.querySelectorAll(".svc-cb:checked")].map(cb => cb.value);
+    const sr      = this.shadowRoot;
+    const targets = [...sr.querySelectorAll(".svc-cb:checked")].map(cb => cb.value);
     const events  = {};
     ALL_EVENTS.forEach(e => { events[e] = false; });
-    this.shadowRoot.querySelectorAll(".ev-cb").forEach(cb => { events[cb.dataset.event] = cb.checked; });
-    await this._api("POST", "notifications", { notify_targets: targets, notify_events: events });
-    if (this._config) {
-      this._config.notifications = { notify_targets: targets, notify_events: events };
-    }
+    sr.querySelectorAll(".ev-cb").forEach(cb => { events[cb.dataset.event] = cb.checked; });
+    const messages = {};
+    sr.querySelectorAll(".ev-msg").forEach(inp => {
+      const v = inp.value.trim();
+      if (v) messages[inp.dataset.event] = v;
+    });
+    const high_priority = sr.querySelector("#notif-high-priority")?.checked ?? false;
+    const payload = { notify_targets: targets, notify_events: events, high_priority, messages };
+    await this._api("POST", "notifications", payload);
+    if (this._config) this._config.notifications = payload;
     this._toast("Notifications saved ✓");
   }
 
@@ -958,8 +996,19 @@ const CSS = `
   text-align:right;
 }
 
-.event-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:4px 0 14px}
-.event-row{display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:13px}
+.event-blocks{display:flex;flex-direction:column;gap:6px;margin:4px 0 14px}
+.event-block{border:1px solid var(--divider-color,#383c4a);border-radius:8px;padding:10px 12px}
+.event-block-header{display:flex;align-items:center;gap:8px;cursor:pointer}
+.event-label{font-size:13px;flex:1}
+.event-msg-row{margin-top:8px;padding-left:24px}
+.ev-msg{
+  width:100%;
+  background:var(--secondary-background-color,#1e2028);
+  border:1px solid var(--divider-color,#383c4a);
+  color:var(--primary-text-color,#e8e8e8);
+  padding:6px 10px;border-radius:6px;font-size:12px;font-family:inherit;
+}
+.ev-msg::placeholder{color:var(--secondary-text-color,#9095a5)}
 
 .toggle-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:8px 0}
 .toggle-label{font-size:14px;margin-bottom:3px}

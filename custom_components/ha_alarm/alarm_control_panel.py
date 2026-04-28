@@ -37,6 +37,8 @@ from .const import (
     CONF_EXIT_DELAY,
     CONF_NOTIFICATIONS,
     CONF_NOTIFY_EVENTS,
+    CONF_NOTIFY_HIGH_PRIORITY,
+    CONF_NOTIFY_MESSAGES,
     CONF_NOTIFY_TARGETS,
     CONF_SENSORS,
     CONF_CHIME_TONE,
@@ -401,24 +403,35 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
 
         mode_label   = (self._armed_mode or "").replace("_", " ").title()
         sensor_label = self._sensor_label(sensor_id)
-        messages = {
-            EVENT_ARMING: f"Alarm arming in {mode_label} mode — exit now.",
-            EVENT_ARMED: f"Alarm armed in {mode_label} mode.",
+
+        defaults = {
+            EVENT_ARMING:    f"Alarm arming in {mode_label} mode — exit now.",
+            EVENT_ARMED:     f"Alarm armed in {mode_label} mode.",
             EVENT_TRIGGERED: f"ALARM TRIGGERED — sensor: {sensor_label}.",
-            EVENT_DISARMED: "Alarm disarmed.",
+            EVENT_DISARMED:  "Alarm disarmed.",
             EVENT_DISARMING: "Alarm disarming.",
-            EVENT_PENDING: f"Entry detected — disarm now. Sensor: {sensor_label}.",
-            EVENT_FAILED: "Alarm action failed: invalid code.",
+            EVENT_PENDING:   f"Entry detected — disarm now. Sensor: {sensor_label}.",
+            EVENT_FAILED:    "Alarm action failed: invalid code.",
         }
-        message = messages.get(event, f"Alarm event: {event}")
+        raw = cfg.get(CONF_NOTIFY_MESSAGES, {}).get(event, "").strip()
+        if raw:
+            message = raw.replace("{mode}", mode_label).replace("{sensor}", sensor_label)
+        else:
+            message = defaults.get(event, f"Alarm event: {event}")
+
+        service_data: dict = {"message": message, "title": "HA Alarm"}
+        if cfg.get(CONF_NOTIFY_HIGH_PRIORITY, False):
+            service_data["data"] = {
+                "ttl": 0,
+                "priority": "high",
+                "push": {"interruption-level": "time-sensitive"},
+            }
 
         for target in targets:
             parts = target.split(".", 1)
             if len(parts) == 2:
                 self.hass.async_create_task(
-                    self.hass.services.async_call(
-                        parts[0], parts[1], {"message": message, "title": "HA Alarm"}
-                    )
+                    self.hass.services.async_call(parts[0], parts[1], service_data)
                 )
 
     # -------------------------------------------------- alarm control panel
