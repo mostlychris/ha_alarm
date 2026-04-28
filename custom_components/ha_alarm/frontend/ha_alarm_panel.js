@@ -28,8 +28,7 @@ const EVENT_LABELS = {
 const BYPASS_ONE_CYCLE = 0;
 const BYPASS_INDEFINITE = -1;
 
-// Entity domains that can act as a siren/output device
-const SIREN_DOMAINS = ["siren", "switch", "script", "media_player", "input_boolean"];
+const SIREN_DOMAINS = ["siren"];
 
 class HaAlarmPanel extends HTMLElement {
   constructor() {
