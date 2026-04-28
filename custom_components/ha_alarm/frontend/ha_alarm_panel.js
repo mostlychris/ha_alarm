@@ -45,6 +45,8 @@ class HaAlarmPanel extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    const menuBtn = this.shadowRoot.querySelector("#ha-menu-btn");
+    if (menuBtn) menuBtn.hass = hass;
     if (!this._ready) {
       this._ready = true;
       this._build();
@@ -79,7 +81,7 @@ class HaAlarmPanel extends HTMLElement {
   _build() {
     this.shadowRoot.innerHTML = `<style>${CSS}</style>
 <div class="app-header">
-  <button class="menu-btn" id="menu-btn" title="Open sidebar">&#9776;</button>
+  <ha-menu-button id="ha-menu-btn"></ha-menu-button>
   <span class="header-title">Alarm Settings</span>
   <span class="badge disarmed" id="badge">Loading…</span>
 </div>
@@ -245,10 +247,6 @@ class HaAlarmPanel extends HTMLElement {
 
   _wire() {
     const sr = this.shadowRoot;
-
-    sr.querySelector("#menu-btn").addEventListener("click", () => {
-      window.dispatchEvent(new CustomEvent("hass-toggle-menu"));
-    });
 
     sr.querySelectorAll(".card-header").forEach(h => {
       h.addEventListener("click", () => {
@@ -806,15 +804,6 @@ const CSS = `
 }
 .header-title{flex:1;font-size:20px;font-weight:400;color:var(--app-header-text-color,#fff)}
 .badge{padding:3px 12px;border-radius:12px;font-size:12px;font-weight:500}
-.menu-btn{
-  background:transparent;border:none;
-  color:var(--app-header-text-color,#fff);
-  font-size:20px;cursor:pointer;
-  width:48px;height:48px;border-radius:50%;
-  display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;font-family:inherit;
-}
-.menu-btn:hover{background:rgba(255,255,255,.12)}
 .badge.disarmed {background:#4caf5022;color:#4caf50}
 .badge.armed    {background:#2196f322;color:#2196f3}
 .badge.triggered{background:#f4433622;color:#f44336}
