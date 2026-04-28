@@ -41,6 +41,17 @@ class HaAlarmPanel extends HTMLElement {
     this._showOthers     = {};
     this._pendingSensors = {};  // mode -> Set; tracks unsaved checkbox state across re-renders
     this._ready          = false;
+    this._narrow         = false;
+  }
+
+  set narrow(narrow) {
+    this._narrow = narrow;
+    this._syncNarrow();
+  }
+
+  _syncNarrow() {
+    const btn = this.shadowRoot?.querySelector("#menu-btn");
+    if (btn) btn.classList.toggle("gone", !this._narrow);
   }
 
   set hass(hass) {
@@ -80,6 +91,7 @@ class HaAlarmPanel extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>${CSS}</style>
 <div class="panel">
   <div class="panel-header">
+    <button class="menu-btn gone" id="menu-btn" title="Open sidebar">&#9776;</button>
     <span class="page-title">Alarm Settings</span>
     <span class="badge disarmed" id="badge">Loading…</span>
   </div>
@@ -228,6 +240,7 @@ class HaAlarmPanel extends HTMLElement {
 
     this._wire();
     this._refreshBadge();
+    this._syncNarrow();
   }
 
   _card(id, title, body) {
@@ -244,6 +257,10 @@ class HaAlarmPanel extends HTMLElement {
 
   _wire() {
     const sr = this.shadowRoot;
+
+    sr.querySelector("#menu-btn").addEventListener("click", () => {
+      window.dispatchEvent(new CustomEvent("hass-toggle-menu"));
+    });
 
     sr.querySelectorAll(".card-header").forEach(h => {
       h.addEventListener("click", () => {
@@ -794,6 +811,14 @@ const CSS = `
 .panel-header{display:flex;align-items:center;gap:12px;margin-bottom:20px}
 .page-title{font-size:22px;font-weight:400;flex:1}
 .badge{padding:3px 12px;border-radius:12px;font-size:12px;font-weight:500}
+.menu-btn{
+  background:transparent;border:none;
+  color:var(--primary-text-color,#e8e8e8);
+  font-size:20px;cursor:pointer;
+  padding:6px 8px;border-radius:6px;line-height:1;flex-shrink:0;
+  font-family:inherit;
+}
+.menu-btn:hover{background:var(--secondary-background-color,#1e2028)}
 .badge.disarmed {background:#4caf5022;color:#4caf50}
 .badge.armed    {background:#2196f322;color:#2196f3}
 .badge.triggered{background:#f4433622;color:#f44336}
