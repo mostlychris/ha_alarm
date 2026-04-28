@@ -120,6 +120,10 @@ class HaAlarmPanel extends HTMLElement {
     </div>
   `)}
 
+  ${this._card("summary", "Sensor Summary", `
+    <div id="sensor-summary"><p class="muted">Loading…</p></div>
+  `)}
+
   ${this._card("delays", "Entry & Exit Delays", `
     <table class="dtable">
       <thead><tr><th>Mode</th><th>Entry (s)</th><th>Exit (s)</th></tr></thead>
@@ -295,6 +299,7 @@ class HaAlarmPanel extends HTMLElement {
     this._refreshBadge();
     this._refreshOpenWarning();
     this._renderSensors();
+    this._populateSensorSummary();
     this._populateBypasses();
     this._populateDelays();
     this._populateCodes();
@@ -438,7 +443,32 @@ class HaAlarmPanel extends HTMLElement {
     await this._api("POST", "sensors", sensors);
     if (this._config) this._config.sensors = sensors;
     delete this._pendingSensors[this._activeMode];
+    this._populateSensorSummary();
     this._toast("Sensors saved ✓");
+  }
+
+  _populateSensorSummary() {
+    const el = this.shadowRoot.querySelector("#sensor-summary");
+    if (!el || !this._config) return;
+    const sensors = this._config.sensors || {};
+    let html = "";
+    let any = false;
+    MODES.forEach(m => {
+      const ids = sensors[m.key] || [];
+      if (!ids.length) return;
+      any = true;
+      const chips = ids.map(id => {
+        const state  = this._hass.states[id];
+        const name   = state?.attributes?.friendly_name || id;
+        const open   = state?.state === "on";
+        return `<span class="chip${open ? " danger" : ""}">${name}</span>`;
+      }).join("");
+      html += `<div class="summary-group">
+        <div class="sub-heading">${m.label} <span class="muted">(${ids.length})</span></div>
+        <div class="summary-chips">${chips}</div>
+      </div>`;
+    });
+    el.innerHTML = any ? html : `<p class="muted">No sensors configured yet.</p>`;
   }
 
   // ── Bypass ────────────────────────────────────────────────────────────────
@@ -950,6 +980,8 @@ const CSS = `
 .btn-ghost.danger:hover{background:#f4433612}
 
 .muted{color:var(--secondary-text-color,#9095a5)}
+.summary-group{margin-bottom:16px}
+.summary-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .small{font-size:12px;margin-top:3px}
 .gone{display:none}
 
