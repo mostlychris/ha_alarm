@@ -547,10 +547,13 @@ class HaAlarmPanel extends HTMLElement {
         }
       });
     });
-    return result.sort((a, b) =>
-      (a.attributes.friendly_name || a.entity_id)
-        .localeCompare(b.attributes.friendly_name || b.entity_id)
-    );
+    return result.sort((a, b) => {
+      const aOpen = this._hass.states[a.entity_id]?.state === "on";
+      const bOpen = this._hass.states[b.entity_id]?.state === "on";
+      if (aOpen !== bOpen) return aOpen ? -1 : 1;
+      return (a.attributes.friendly_name || a.entity_id)
+        .localeCompare(b.attributes.friendly_name || b.entity_id);
+    });
   }
 
   _populateBypasses() {
@@ -561,8 +564,10 @@ class HaAlarmPanel extends HTMLElement {
       const sensors = this._modeSensors();
       sel.innerHTML = sensors.length
         ? sensors.map(s => {
-            const name = s.attributes.friendly_name || s.entity_id;
-            return `<option value="${s.entity_id}">${name}</option>`;
+            const name   = s.attributes.friendly_name || s.entity_id;
+            const isOpen = this._hass.states[s.entity_id]?.state === "on";
+            const label  = isOpen ? `⚠ ${name} (open)` : name;
+            return `<option value="${s.entity_id}">${label}</option>`;
           }).join("")
         : `<option value="">No mode sensors configured yet</option>`;
     }
