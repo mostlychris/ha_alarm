@@ -272,6 +272,10 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
             self._siren_repeat_unsub()
             self._siren_repeat_unsub = None
 
+    def _cancel_repeats(self) -> None:
+        self._cancel_pending_repeat()
+        self._cancel_siren_repeat()
+
     def _siren_on(self) -> None:
         cfg    = self._cfg()
         entity = cfg.get(CONF_SIREN_ENTITY, "")
@@ -285,6 +289,8 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
                 svc_data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
 
             async def _play_alarm(_=None) -> None:
+                if self._alarm_state != AlarmControlPanelState.TRIGGERED:
+                    return
                 await self.hass.services.async_call(
                     "siren", "turn_on",
                     service_data=svc_data,
@@ -318,6 +324,8 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
             svc_data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
 
         async def _play_pending(_=None) -> None:
+            if self._alarm_state != AlarmControlPanelState.PENDING:
+                return
             await self.hass.services.async_call(
                 "siren", "turn_on",
                 service_data=svc_data,
@@ -383,7 +391,9 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
 
     def _do_trigger(self, sensor_id: str | None) -> None:
         self._unsubscribe_sensors()
-        self._siren_off()
+        # Cancel repeat loops without sending turn_off so the device can switch
+        # tones seamlessly — siren.turn_on with the alarm tone overrides directly.
+        self._cancel_repeats()
         self._set_state(AlarmControlPanelState.TRIGGERED)
         self._notify(EVENT_TRIGGERED, sensor_id)
         self._siren_on()
