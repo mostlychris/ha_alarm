@@ -96,12 +96,12 @@ Add numeric PIN codes (minimum 4 digits). Each user can be marked as admin. At l
 
 **Targets** — select which HA notify services receive alarm notifications (e.g. `notify.mobile_app_your_phone`).
 
-**⚡ High priority** — when enabled, adds platform-specific priority data to every notification so they break through Do Not Disturb:
+**⚡ High priority** — when enabled, adds platform-specific priority data to every notification for faster, more reliable delivery:
 
-| Platform | Data added |
-|---|---|
-| Android | `ttl: 0`, `priority: high` |
-| iOS | `push.interruption-level: time-sensitive` |
+| Platform | Data added | Effect |
+|---|---|---|
+| Android | `ttl: 0`, `priority: high` | Delivers immediately without batching or delay; does **not** bypass DND |
+| iOS | `push.interruption-level: time-sensitive` | Can break through Focus modes if the user has allowed time-sensitive notifications |
 
 **Events & Messages** — enable or disable notifications per event and optionally override the default message text. Leave the message field blank to use the built-in default.
 
