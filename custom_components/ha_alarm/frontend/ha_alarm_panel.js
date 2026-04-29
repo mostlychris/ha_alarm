@@ -252,6 +252,17 @@ class HaAlarmPanel extends HTMLElement {
       <input type="number" id="siren-volume-num" min="0" max="1" step="0.05" value="0" class="vol-num" placeholder="0–1">
     </div>
     <p class="muted small" style="margin-bottom:12px">Tone and volume are passed to siren.turn_on. Without a tone, homeassistant.turn_on is used (works for switches too). Volume 0 = device default.</p>
+    <div class="divider"></div>
+    <div class="field-row">
+      <label>Pending tone</label>
+      <input type="text" id="pending-tone" placeholder='e.g. 4 (played during entry delay; leave blank to disable)'>
+    </div>
+    <div class="field-row vol-row">
+      <label>Pending volume</label>
+      <input type="range"  id="pending-volume"     min="0" max="1" step="0.05" value="0">
+      <input type="number" id="pending-volume-num" min="0" max="1" step="0.05" value="0" class="vol-num" placeholder="0–1">
+    </div>
+    <p class="muted small" style="margin-bottom:12px">Warning tone played on the siren entity during the entry delay countdown. Requires a tone ID — if blank, no pending sound plays. Volume 0 = device default.</p>
     <div class="row-end"><button class="btn" id="save-general">Save</button></div>
   `)}
 </div>
@@ -306,8 +317,9 @@ class HaAlarmPanel extends HTMLElement {
         slider.value = v;
       });
     };
-    bindVolume("siren-volume", "siren-volume-num");
-    bindVolume("chime-volume", "chime-volume-num");
+    bindVolume("siren-volume",    "siren-volume-num");
+    bindVolume("pending-volume",  "pending-volume-num");
+    bindVolume("chime-volume",    "chime-volume-num");
 
     sr.querySelector("#save-sensors") .addEventListener("click", () => this._saveSensors());
     sr.querySelector("#add-bypass")   .addEventListener("click", () => this._addBypass());
@@ -835,6 +847,17 @@ class HaAlarmPanel extends HTMLElement {
     const sirenNum    = sr.querySelector("#siren-volume-num");
     if (sirenSlider) sirenSlider.value = sirenVol;
     if (sirenNum)    sirenNum.value    = sirenVol;
+
+    // Pending tone
+    const pendingTone = sr.querySelector("#pending-tone");
+    if (pendingTone) pendingTone.value = this._config?.pending_tone || "";
+
+    // Pending volume
+    const pendingVol    = this._config?.pending_volume ?? 0;
+    const pendingSlider = sr.querySelector("#pending-volume");
+    const pendingNum    = sr.querySelector("#pending-volume-num");
+    if (pendingSlider) pendingSlider.value = pendingVol;
+    if (pendingNum)    pendingNum.value    = pendingVol;
   }
 
   async _saveGeneral() {
@@ -846,6 +869,8 @@ class HaAlarmPanel extends HTMLElement {
       siren_entity:         sr.querySelector("#siren-entity")?.value || "",
       siren_tone:           sr.querySelector("#siren-tone")?.value.trim() || "",
       siren_volume:         parseFloat(sr.querySelector("#siren-volume-num")?.value || "0"),
+      pending_tone:         sr.querySelector("#pending-tone")?.value.trim() || "",
+      pending_volume:       parseFloat(sr.querySelector("#pending-volume-num")?.value || "0"),
     };
     await this._api("POST", "general", payload);
     if (this._config) Object.assign(this._config, payload);

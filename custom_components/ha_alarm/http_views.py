@@ -29,6 +29,8 @@ from .const import (
     CONF_SENSORS,
     CONF_CHIME_TONE,
     CONF_CHIME_VOLUME,
+    CONF_PENDING_TONE,
+    CONF_PENDING_VOLUME,
     CONF_SIREN_ENTITY,
     CONF_SIREN_TONE,
     CONF_SIREN_VOLUME,
@@ -110,6 +112,8 @@ class HaAlarmConfigView(HomeAssistantView):
             "siren_entity": cfg.get(CONF_SIREN_ENTITY, ""),
             "siren_tone": cfg.get(CONF_SIREN_TONE, ""),
             "siren_volume": float(cfg.get(CONF_SIREN_VOLUME, 0.0)),
+            "pending_tone": cfg.get(CONF_PENDING_TONE, ""),
+            "pending_volume": float(cfg.get(CONF_PENDING_VOLUME, 0.0)),
             "chime_mode": cfg.get(CONF_CHIME_MODE, False),
             "chime_sensors": cfg.get(CONF_CHIME_SENSORS, []),
             "chime_tone": cfg.get(CONF_CHIME_TONE, ""),
@@ -177,9 +181,11 @@ class HaAlarmGeneralView(HomeAssistantView):
         opts[CONF_CODE_ARM_REQUIRED] = bool(data.get("code_arm_required", True))
         opts[CONF_TRIGGER_TIME] = int(data.get("trigger_time", DEFAULT_TRIGGER_TIME))
         opts[CONF_DISARM_AFTER_TRIGGER] = bool(data.get("disarm_after_trigger", False))
-        opts[CONF_SIREN_ENTITY]  = str(data.get("siren_entity", ""))
-        opts[CONF_SIREN_TONE]    = str(data.get("siren_tone", ""))
-        opts[CONF_SIREN_VOLUME]  = round(min(1.0, max(0.0, float(data.get("siren_volume", 0.0)))), 2)
+        opts[CONF_SIREN_ENTITY]   = str(data.get("siren_entity", ""))
+        opts[CONF_SIREN_TONE]     = str(data.get("siren_tone", ""))
+        opts[CONF_SIREN_VOLUME]   = round(min(1.0, max(0.0, float(data.get("siren_volume", 0.0)))), 2)
+        opts[CONF_PENDING_TONE]   = str(data.get("pending_tone", ""))
+        opts[CONF_PENDING_VOLUME] = round(min(1.0, max(0.0, float(data.get("pending_volume", 0.0)))), 2)
         _update(hass, entry, opts)
         return self.json({"ok": True})
 

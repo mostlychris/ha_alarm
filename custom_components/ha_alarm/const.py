@@ -31,6 +31,7 @@ CONF_TRIGGER_TIME = "trigger_time"
 CONF_DISARM_AFTER_TRIGGER = "disarm_after_trigger"
 CONF_SIREN_ENTITY = "siren_entity"
 CONF_SIREN_TONE = "siren_tone"
+CONF_PENDING_TONE = "pending_tone"
 CONF_CHIME_TONE = "chime_tone"
 
 CONF_BYPASSED_SENSORS = "bypassed_sensors"
@@ -40,8 +41,9 @@ BYPASS_INDEFINITE = -1  # until manually cleared
 CONF_CHIME_MODE = "chime_mode"
 CONF_CHIME_SENSORS = "chime_sensors"
 
-CONF_SIREN_VOLUME = "siren_volume"   # float 0.0-1.0; 0.0 = don't override device default
-CONF_CHIME_VOLUME = "chime_volume"   # float 0.0-1.0; 0.0 = don't override device default
+CONF_SIREN_VOLUME = "siren_volume"     # float 0.0-1.0; 0.0 = don't override device default
+CONF_PENDING_VOLUME = "pending_volume" # float 0.0-1.0; 0.0 = don't override device default
+CONF_CHIME_VOLUME = "chime_volume"     # float 0.0-1.0; 0.0 = don't override device default
 
 DEFAULT_TRIGGER_TIME = 600  # 10 minutes
 

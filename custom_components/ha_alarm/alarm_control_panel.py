@@ -44,6 +44,8 @@ from .const import (
     CONF_SENSORS,
     CONF_CHIME_TONE,
     CONF_CHIME_VOLUME,
+    CONF_PENDING_TONE,
+    CONF_PENDING_VOLUME,
     CONF_SIREN_ENTITY,
     CONF_SIREN_TONE,
     CONF_SIREN_VOLUME,
@@ -272,6 +274,20 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
                 )
             )
 
+    def _pending_siren_on(self) -> None:
+        cfg    = self._cfg()
+        entity = cfg.get(CONF_SIREN_ENTITY, "")
+        tone   = cfg.get(CONF_PENDING_TONE, "")
+        if not entity or not tone:
+            return
+        data: dict = {"entity_id": entity, "tone": tone}
+        vol = float(cfg.get(CONF_PENDING_VOLUME, 0.0))
+        if vol > 0.0:
+            data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
+        self.hass.async_create_task(
+            self.hass.services.async_call("siren", "turn_on", data)
+        )
+
     def _siren_off(self) -> None:
         entity = self._cfg().get(CONF_SIREN_ENTITY, "")
         if entity:
@@ -306,6 +322,7 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         if entry_delay > 0:
             self._set_state(AlarmControlPanelState.PENDING)
             self._notify(EVENT_PENDING, new_state.entity_id)
+            self._pending_siren_on()
             self._cancel_timer()
             self._timer = self.hass.loop.call_later(
                 entry_delay, self._timer_trigger_alarm
@@ -319,6 +336,7 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
 
     def _do_trigger(self, sensor_id: str | None) -> None:
         self._unsubscribe_sensors()
+        self._siren_off()
         self._set_state(AlarmControlPanelState.TRIGGERED)
         self._notify(EVENT_TRIGGERED, sensor_id)
         self._siren_on()
