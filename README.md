@@ -8,14 +8,14 @@ A fully local, custom alarm control panel for Home Assistant with a built-in sid
 
 - **Five arm modes** — Away, Home, Night, Vacation, and Custom, each with independently configured sensors and entry/exit delays
 - **Sensor management** — assign any binary sensor to any mode directly from the config panel
-- **Sensor bypass** — bypass individual sensors for one arm cycle, a set duration, or indefinitely
+- **Sensor bypass** — bypass individual sensors for one arm cycle, a set duration, or indefinitely; open sensors float to the top of the bypass picker for quick access
 - **User codes** — multiple PIN codes with admin/standard roles
 - **Siren integration** — trigger a `siren` entity on alarm with configurable tone and volume
 - **Siren repeat** — re-trigger the alarm tone every N seconds to keep devices looping that stop after a single clip
 - **Pending siren** — play a distinct warning tone during the entry delay so users know to disarm before the alarm fires
 - **Pending repeat** — re-trigger the pending warning tone on the same interval logic as the alarm siren
 - **Chime mode** — play a tone on a siren entity when a chime sensor opens while the alarm is disarmed
-- **Mobile notifications** — send alerts to any HA notify service on arm, disarm, trigger, and more
+- **Mobile notifications** — send alerts to any HA notify service on arm, disarm, trigger, and more; includes a **Send Test** button to verify delivery without triggering the alarm
 - **High-priority notifications** — Android (`ttl=0` / `priority=high`) and iOS (`time-sensitive` interruption level)
 - **Custom notification messages** — override the default text per event with `{mode}`, `{sensor}`, and `{user}` placeholders
 - **Sensor summary** — see all configured sensors grouped by mode at a glance; click any sensor chip to remove it
@@ -59,7 +59,7 @@ The sidebar panel has collapsible sections for every aspect of the alarm. All ch
 
 Select which binary sensors are active for each arm mode using the mode tabs (Away / Home / Night / Vacation / Custom). Suggested sensors are pre-filtered by device class for each mode; other sensors are available under "Other sensors."
 
-**🔓 Sensor Bypass** — temporarily disable a sensor without removing it from a mode:
+**🔓 Sensor Bypass** — temporarily disable a sensor without removing it from a mode. The sensor picker automatically sorts any currently open sensors to the top (marked with ⚠) so they're easy to find before arming:
 
 | Duration | Behaviour |
 |---|---|
@@ -95,6 +95,8 @@ Add numeric PIN codes (minimum 4 digits). Each user can be marked as admin. At l
 ### 📱 Notifications
 
 **Targets** — select which HA notify services receive alarm notifications (e.g. `notify.mobile_app_your_phone`).
+
+**🧪 Send Test** — fires an immediate test notification to all configured targets using the current high-priority setting, without needing to trigger the alarm. Useful for confirming delivery after initial setup or after changing targets.
 
 **⚡ High priority** — when enabled, adds platform-specific priority data to every notification for faster, more reliable delivery:
 

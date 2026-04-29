@@ -188,7 +188,10 @@ class HaAlarmPanel extends HTMLElement {
         </div>
       </div>`).join("")}
     </div>
-    <div class="row-end"><button class="btn" id="save-notif">Save Notifications</button></div>
+    <div class="row-end">
+      <button class="btn secondary" id="test-notif">Send Test</button>
+      <button class="btn" id="save-notif">Save Notifications</button>
+    </div>
   `)}
 
   ${this._card("chime", "Chime Mode", `
@@ -336,6 +339,7 @@ class HaAlarmPanel extends HTMLElement {
     sr.querySelector("#save-delays")  .addEventListener("click", () => this._saveDelays());
     sr.querySelector("#add-user")     .addEventListener("click", () => this._addUser());
     sr.querySelector("#save-notif")   .addEventListener("click", () => this._saveNotif());
+    sr.querySelector("#test-notif")   .addEventListener("click", () => this._testNotif());
     sr.querySelector("#save-chime")   .addEventListener("click", () => this._saveChime());
     sr.querySelector("#save-general") .addEventListener("click", () => this._saveGeneral());
   }
@@ -748,6 +752,37 @@ class HaAlarmPanel extends HTMLElement {
     this._toast("Notifications saved ✓");
   }
 
+  async _testNotif() {
+    const notif   = this._config?.notifications || {};
+    const targets = notif.notify_targets || [];
+    if (!targets.length) {
+      this._toast("No notification targets configured", true);
+      return;
+    }
+    const svcData = {
+      title:   "HA Alarm — Test",
+      message: "Test notification from HA Alarm. If you see this, notifications are working correctly.",
+    };
+    if (notif.high_priority) {
+      svcData.data = {
+        ttl:      0,
+        priority: "high",
+        push:     { "interruption-level": "time-sensitive" },
+      };
+    }
+    try {
+      for (const target of targets) {
+        const dot    = target.indexOf(".");
+        const domain = target.slice(0, dot);
+        const svc    = target.slice(dot + 1);
+        await this._hass.callService(domain, svc, svcData);
+      }
+      this._toast(`Test sent to ${targets.length} target${targets.length > 1 ? "s" : ""} ✓`);
+    } catch (e) {
+      this._toast(e?.message || "Failed to send test notification", true);
+    }
+  }
+
   // ── Chime ─────────────────────────────────────────────────────────────────
 
   _populateChime() {
@@ -1073,13 +1108,19 @@ const CSS = `
 .toggle-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:8px 0}
 .toggle-label{font-size:14px;margin-bottom:3px}
 
-.row-end{display:flex;justify-content:flex-end;margin-top:14px}
+.row-end{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:14px}
 .btn{
   background:var(--primary-color,#03a9f4);color:#fff;
   border:none;padding:8px 20px;border-radius:6px;
   cursor:pointer;font-size:13px;font-family:inherit
 }
 .btn:hover{opacity:.88}
+.btn.secondary{
+  background:transparent;
+  border:1px solid var(--primary-color,#03a9f4);
+  color:var(--primary-color,#03a9f4)
+}
+.btn.secondary:hover{background:color-mix(in srgb,var(--primary-color,#03a9f4) 12%,transparent)}
 .btn-ghost{
   background:transparent;border:1px solid;
   padding:4px 10px;border-radius:6px;
