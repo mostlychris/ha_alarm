@@ -42,7 +42,9 @@ CONF_CHIME_MODE = "chime_mode"
 CONF_CHIME_SENSORS = "chime_sensors"
 
 CONF_SIREN_VOLUME = "siren_volume"     # float 0.0-1.0; 0.0 = don't override device default
+CONF_SIREN_REPEAT = "siren_repeat"    # int seconds between repeat plays; 0 = play once
 CONF_PENDING_VOLUME = "pending_volume" # float 0.0-1.0; 0.0 = don't override device default
+CONF_PENDING_REPEAT = "pending_repeat" # int seconds between repeat plays; 0 = play once
 CONF_CHIME_VOLUME = "chime_volume"     # float 0.0-1.0; 0.0 = don't override device default
 
 DEFAULT_TRIGGER_TIME = 600  # 10 minutes

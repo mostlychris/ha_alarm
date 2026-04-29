@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import logging
 import time
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.exceptions import HomeAssistantError
@@ -16,7 +17,7 @@ from homeassistant.components.alarm_control_panel import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
@@ -44,9 +45,11 @@ from .const import (
     CONF_SENSORS,
     CONF_CHIME_TONE,
     CONF_CHIME_VOLUME,
+    CONF_PENDING_REPEAT,
     CONF_PENDING_TONE,
     CONF_PENDING_VOLUME,
     CONF_SIREN_ENTITY,
+    CONF_SIREN_REPEAT,
     CONF_SIREN_TONE,
     CONF_SIREN_VOLUME,
     CONF_TRIGGER_TIME,
@@ -122,6 +125,8 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         self._timer: asyncio.TimerHandle | None = None
         self._unsub_sensors: list = []
         self._unsub_chime: list = []
+        self._pending_repeat_unsub = None
+        self._siren_repeat_unsub = None
 
     # ------------------------------------------------------------------ state
 
@@ -253,6 +258,16 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
             )
         )
 
+    def _cancel_pending_repeat(self) -> None:
+        if self._pending_repeat_unsub:
+            self._pending_repeat_unsub()
+            self._pending_repeat_unsub = None
+
+    def _cancel_siren_repeat(self) -> None:
+        if self._siren_repeat_unsub:
+            self._siren_repeat_unsub()
+            self._siren_repeat_unsub = None
+
     def _siren_on(self) -> None:
         cfg    = self._cfg()
         entity = cfg.get(CONF_SIREN_ENTITY, "")
@@ -264,9 +279,19 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
             vol = float(cfg.get(CONF_SIREN_VOLUME, 0.0))
             if vol > 0.0:
                 data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
-            self.hass.async_create_task(
-                self.hass.services.async_call("siren", "turn_on", data)
-            )
+
+            def _play_alarm(_=None) -> None:
+                self.hass.async_create_task(
+                    self.hass.services.async_call("siren", "turn_on", data)
+                )
+
+            _play_alarm()
+            repeat = int(cfg.get(CONF_SIREN_REPEAT, 0))
+            if repeat > 0:
+                self._cancel_siren_repeat()
+                self._siren_repeat_unsub = async_track_time_interval(
+                    self.hass, _play_alarm, timedelta(seconds=repeat)
+                )
         else:
             self.hass.async_create_task(
                 self.hass.services.async_call(
@@ -284,11 +309,23 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         vol = float(cfg.get(CONF_PENDING_VOLUME, 0.0))
         if vol > 0.0:
             data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
-        self.hass.async_create_task(
-            self.hass.services.async_call("siren", "turn_on", data)
-        )
+
+        def _play_pending(_=None) -> None:
+            self.hass.async_create_task(
+                self.hass.services.async_call("siren", "turn_on", data)
+            )
+
+        _play_pending()
+        repeat = int(cfg.get(CONF_PENDING_REPEAT, 0))
+        if repeat > 0:
+            self._cancel_pending_repeat()
+            self._pending_repeat_unsub = async_track_time_interval(
+                self.hass, _play_pending, timedelta(seconds=repeat)
+            )
 
     def _siren_off(self) -> None:
+        self._cancel_pending_repeat()
+        self._cancel_siren_repeat()
         entity = self._cfg().get(CONF_SIREN_ENTITY, "")
         if entity:
             self.hass.async_create_task(
@@ -399,6 +436,8 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
 
     async def async_will_remove_from_hass(self) -> None:
         self._cancel_timer()
+        self._cancel_pending_repeat()
+        self._cancel_siren_repeat()
         self._unsubscribe_sensors()
         self._unsubscribe_chime()
 
