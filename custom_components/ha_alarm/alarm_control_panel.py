@@ -284,16 +284,14 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
             if vol > 0.0:
                 svc_data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
 
-            def _play_alarm(_=None) -> None:
-                self.hass.async_create_task(
-                    self.hass.services.async_call(
-                        "siren", "turn_on",
-                        service_data=svc_data,
-                        target={"entity_id": entity},
-                    )
+            async def _play_alarm(_=None) -> None:
+                await self.hass.services.async_call(
+                    "siren", "turn_on",
+                    service_data=svc_data,
+                    target={"entity_id": entity},
                 )
 
-            _play_alarm()
+            self.hass.async_create_task(_play_alarm())
             repeat = int(cfg.get(CONF_SIREN_REPEAT, 0))
             if repeat > 0:
                 self._cancel_siren_repeat()
@@ -319,16 +317,14 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         if vol > 0.0:
             svc_data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
 
-        def _play_pending(_=None) -> None:
-            self.hass.async_create_task(
-                self.hass.services.async_call(
-                    "siren", "turn_on",
-                    service_data=svc_data,
-                    target={"entity_id": entity},
-                )
+        async def _play_pending(_=None) -> None:
+            await self.hass.services.async_call(
+                "siren", "turn_on",
+                service_data=svc_data,
+                target={"entity_id": entity},
             )
 
-        _play_pending()
+        self.hass.async_create_task(_play_pending())
         repeat = int(cfg.get(CONF_PENDING_REPEAT, 0))
         if repeat > 0:
             self._cancel_pending_repeat()
