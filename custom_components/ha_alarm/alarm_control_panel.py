@@ -240,12 +240,16 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         entity     = cfg.get(CONF_SIREN_ENTITY, "")
         chime_tone = cfg.get(CONF_CHIME_TONE, "")
         if entity and chime_tone:
-            data: dict = {"entity_id": entity, "tone": chime_tone}
+            svc_data: dict = {"tone": chime_tone}
             vol = float(cfg.get(CONF_CHIME_VOLUME, 0.0))
             if vol > 0.0:
-                data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
+                svc_data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
             self.hass.async_create_task(
-                self.hass.services.async_call("siren", "turn_on", data)
+                self.hass.services.async_call(
+                    "siren", "turn_on",
+                    service_data=svc_data,
+                    target={"entity_id": entity},
+                )
             )
 
     # ----------------------------------------------------------------- siren
@@ -275,14 +279,18 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         if not entity:
             return
         if tone:
-            data: dict = {"entity_id": entity, "tone": tone}
+            svc_data: dict = {"tone": tone}
             vol = float(cfg.get(CONF_SIREN_VOLUME, 0.0))
             if vol > 0.0:
-                data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
+                svc_data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
 
             def _play_alarm(_=None) -> None:
                 self.hass.async_create_task(
-                    self.hass.services.async_call("siren", "turn_on", data)
+                    self.hass.services.async_call(
+                        "siren", "turn_on",
+                        service_data=svc_data,
+                        target={"entity_id": entity},
+                    )
                 )
 
             _play_alarm()
@@ -295,7 +303,8 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         else:
             self.hass.async_create_task(
                 self.hass.services.async_call(
-                    "homeassistant", "turn_on", {"entity_id": entity}
+                    "homeassistant", "turn_on",
+                    target={"entity_id": entity},
                 )
             )
 
@@ -305,14 +314,18 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         tone   = cfg.get(CONF_PENDING_TONE, "")
         if not entity or not tone:
             return
-        data: dict = {"entity_id": entity, "tone": tone}
+        svc_data: dict = {"tone": tone}
         vol = float(cfg.get(CONF_PENDING_VOLUME, 0.0))
         if vol > 0.0:
-            data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
+            svc_data["volume_level"] = round(min(1.0, max(0.0, vol)), 2)
 
         def _play_pending(_=None) -> None:
             self.hass.async_create_task(
-                self.hass.services.async_call("siren", "turn_on", data)
+                self.hass.services.async_call(
+                    "siren", "turn_on",
+                    service_data=svc_data,
+                    target={"entity_id": entity},
+                )
             )
 
         _play_pending()
@@ -330,7 +343,8 @@ class HaAlarmPanel(AlarmControlPanelEntity, RestoreEntity):
         if entity:
             self.hass.async_create_task(
                 self.hass.services.async_call(
-                    "homeassistant", "turn_off", {"entity_id": entity}
+                    "homeassistant", "turn_off",
+                    target={"entity_id": entity},
                 )
             )
 
