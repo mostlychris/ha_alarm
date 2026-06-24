@@ -16,15 +16,14 @@ const MODE_CLASSES = {
 
 const ALL_EVENTS = ["arming","armed","triggered","disarmed","disarming","pending","failed"];
 const EVENT_LABELS = {
-  arming:    "Arming — exit delay countdown",
-  armed:     "Alarm armed",
-  triggered: "Alarm triggered",
-  disarmed:  "Alarm disarmed",
+  arming:    "Arming",
+  armed:     "Armed",
+  triggered: "Triggered",
+  disarmed:  "Disarmed",
   disarming: "Disarming",
-  pending:   "Entry detected (pending)",
-  failed:    "Invalid code attempt",
+  pending:   "Entry detected",
+  failed:    "Invalid code",
 };
-
 const DEFAULT_MESSAGES = {
   arming:    "Alarm arming in {mode} mode — exit now.",
   armed:     "Alarm armed in {mode} mode.",
@@ -38,7 +37,14 @@ const DEFAULT_MESSAGES = {
 const BYPASS_ONE_CYCLE = 0;
 const BYPASS_INDEFINITE = -1;
 
-const SIREN_DOMAINS = ["siren"];
+const TABS = [
+  { id: "sensors",       label: "Sensors"       },
+  { id: "delays",        label: "Delays"        },
+  { id: "users",         label: "Users"         },
+  { id: "notifications", label: "Notifications" },
+  { id: "siren",         label: "Siren & Chime" },
+  { id: "settings",      label: "Settings"      },
+];
 
 class HaAlarmPanel extends HTMLElement {
   constructor() {
@@ -46,9 +52,11 @@ class HaAlarmPanel extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._hass           = null;
     this._config         = null;
+    this._activeTab      = "sensors";
     this._activeMode     = "armed_away";
     this._showOthers     = {};
-    this._pendingSensors = {};  // mode -> Set; tracks unsaved checkbox state across re-renders
+    this._pendingSensors = {};
+    this._bypassOpen     = null;
     this._ready          = false;
   }
 
@@ -62,8 +70,9 @@ class HaAlarmPanel extends HTMLElement {
       this._load();
     } else {
       this._refreshBadge();
-      if (this._config) {
+      if (this._config && this._activeTab === "sensors") {
         this._renderSensors();
+        this._renderSelectedChips();
         this._refreshOpenWarning();
       }
     }
@@ -91,193 +100,190 @@ class HaAlarmPanel extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>${CSS}</style>
 <div class="app-header">
   <ha-menu-button id="ha-menu-btn"></ha-menu-button>
-  <span class="header-title">Alarm Settings</span>
+  <span class="header-title">Alarm Configuration</span>
   <span class="badge disarmed" id="badge">Loading…</span>
 </div>
+<nav class="tab-bar">
+  ${TABS.map((t, i) => `<button class="tab-btn${i === 0 ? " active" : ""}" data-tab="${t.id}">${t.label}</button>`).join("")}
+</nav>
 <div class="panel">
-  <div id="open-warning" class="open-warning gone">
-    <span class="warn-icon">⚠</span>
-    <div>
-      <div class="warn-title">Open sensors — arming will be blocked</div>
-      <div id="open-warning-detail" class="warn-detail"></div>
+
+  <div id="open-warning" class="open-warning gone"></div>
+
+  <!-- SENSORS -->
+  <div id="tab-sensors" class="tab-pane">
+    <div class="mode-bar" id="mode-tabs">
+      ${MODES.map((m, i) => `<button class="mode-btn${i === 0 ? " active" : ""}" data-mode="${m.key}">${m.label}</button>`).join("")}
+    </div>
+    <div id="selected-chips" class="selected-chips"></div>
+    <div id="sensor-list"></div>
+    <div class="pane-footer">
+      <button class="btn" id="save-sensors">Save sensors for this mode</button>
     </div>
   </div>
 
-  ${this._card("sensors", "Sensors", `
-    <div class="tabs" id="mode-tabs">
-      ${MODES.map((m, i) => `<button class="tab${i === 0 ? " active" : ""}" data-mode="${m.key}">${m.label}</button>`).join("")}
+  <!-- DELAYS -->
+  <div id="tab-delays" class="tab-pane gone">
+    <div id="delays-grid" class="delays-grid"></div>
+    <div class="pane-footer">
+      <button class="btn" id="save-delays">Save delays</button>
     </div>
-    <div id="sensor-list" class="sensor-list"><p class="muted">Loading sensors…</p></div>
-    <div class="row-end"><button class="btn" id="save-sensors">Save Sensors</button></div>
-    <div class="divider" style="margin:20px 0 16px"></div>
-    <p class="sub-heading">Sensor Bypass</p>
-    <div id="bypass-list"></div>
-    <div class="bypass-form" style="margin-top:12px">
-      <div class="field-row">
-        <label>Sensor</label>
-        <select id="bypass-sensor-sel" class="sel-input"></select>
+  </div>
+
+  <!-- USERS -->
+  <div id="tab-users" class="tab-pane gone">
+    <div id="users-list"></div>
+    <div class="ruled-divider"><span>Add user</span></div>
+    <div class="form-card">
+      <div class="form-row">
+        <label>Name</label>
+        <input type="text" id="new-name" placeholder="Display name">
       </div>
-      <div class="field-row">
-        <label>Duration</label>
-        <select id="bypass-duration-sel" class="sel-input">
-          <option value="0">One arm cycle</option>
-          <option value="86400">24 hours</option>
-          <option value="604800">7 days</option>
-          <option value="-1">Indefinite</option>
-        </select>
+      <div class="form-row">
+        <label>PIN</label>
+        <input type="password" id="new-code" placeholder="Min. 4 digits">
       </div>
-      <div class="row-end"><button class="btn" id="add-bypass">Bypass Sensor</button></div>
+      <div class="form-row">
+        <label>Admin</label>
+        <label class="sw"><input type="checkbox" id="new-admin"><span class="sw-track"></span></label>
+      </div>
     </div>
-  `)}
-
-  ${this._card("summary", "Sensor Summary", `
-    <div id="sensor-summary"><p class="muted">Loading…</p></div>
-  `)}
-
-  ${this._card("delays", "Entry & Exit Delays", `
-    <table class="dtable">
-      <thead><tr><th>Mode</th><th>Entry (s)</th><th>Exit (s)</th></tr></thead>
-      <tbody>
-        ${MODES.map(m => `
-        <tr>
-          <td class="mode-cell">${m.label}</td>
-          <td><input class="num" type="number" min="0" max="600" step="5" data-mode="${m.key}" data-t="entry_delay" value="30"></td>
-          <td><input class="num" type="number" min="0" max="600" step="5" data-mode="${m.key}" data-t="exit_delay"  value="60"></td>
-        </tr>`).join("")}
-      </tbody>
-    </table>
-    <div class="row-end"><button class="btn" id="save-delays">Save Delays</button></div>
-  `)}
-
-  ${this._card("codes", "User Codes", `
-    <div id="codes-list"></div>
-    <div class="divider"></div>
-    <p class="sub-heading">Add User</p>
-    <div class="field-row"><label>Name</label><input type="text"      id="new-name" placeholder="Display name"></div>
-    <div class="field-row"><label>Code</label><input type="password"  id="new-code" placeholder="Min. 4 digits"></div>
-    <div class="field-row"><label>Admin</label><input type="checkbox" id="new-admin"></div>
-    <div class="row-end"><button class="btn" id="add-user">Add User</button></div>
-  `)}
-
-  ${this._card("notifications", "Notifications", `
-    <p class="sub-heading">Notification Targets</p>
-    <div class="svc-list" id="notif-services">
-      <p class="muted">Loading available notify services…</p>
+    <div class="pane-footer">
+      <button class="btn" id="add-user">Add user</button>
     </div>
-    <p class="muted small" style="margin-top:6px">Select which Home Assistant notify services receive alarm notifications.</p>
-    <div class="divider" style="margin:16px 0"></div>
-    <label class="toggle-row">
-      <div>
-        <div class="toggle-label">High priority</div>
-        <div class="muted small">Android: ttl=0 / priority=high &nbsp;·&nbsp; iOS: time-sensitive interruption level</div>
+  </div>
+
+  <!-- NOTIFICATIONS -->
+  <div id="tab-notifications" class="tab-pane gone">
+    <p class="sec-label">Notification targets</p>
+    <div id="notif-services" class="svc-grid"><p class="muted">Loading…</p></div>
+    <div class="setting-row" style="margin-top:16px">
+      <div class="setting-text">
+        <div class="setting-title">High priority</div>
+        <div class="setting-sub">Android: ttl=0 / priority=high · iOS: time-sensitive</div>
       </div>
-      <input type="checkbox" id="notif-high-priority">
-    </label>
-    <div class="divider" style="margin:16px 0"></div>
-    <p class="sub-heading">Events &amp; Messages</p>
-    <p class="muted small" style="margin-bottom:10px">Leave message blank to use the default. Available placeholders: <code>{mode}</code>, <code>{sensor}</code>, <code>{user}</code>.</p>
-    <div class="event-blocks">
-      ${ALL_EVENTS.map(e => `
-      <div class="event-block">
-        <label class="event-block-header">
-          <input type="checkbox" class="ev-cb" data-event="${e}">
-          <span class="event-label">${EVENT_LABELS[e]}</span>
-        </label>
-        <div class="event-msg-row">
-          <input type="text" class="ev-msg" data-event="${e}" placeholder="${DEFAULT_MESSAGES[e]}">
+      <label class="sw"><input type="checkbox" id="notif-high-priority"><span class="sw-track"></span></label>
+    </div>
+    <div class="ruled-divider" style="margin-top:20px"><span>Events &amp; messages</span></div>
+    <p class="hint" style="margin-bottom:10px">Placeholders: <code>{mode}</code> <code>{sensor}</code> <code>{user}</code> — leave message blank for the default.</p>
+    <div id="event-rows" class="event-table"></div>
+    <div class="pane-footer">
+      <button class="btn outline" id="test-notif">Send test</button>
+      <button class="btn" id="save-notif">Save notifications</button>
+    </div>
+  </div>
+
+  <!-- SIREN & CHIME -->
+  <div id="tab-siren" class="tab-pane gone">
+    <p class="sec-label">Alarm siren</p>
+    <div class="form-card">
+      <div class="form-row">
+        <label>Siren entity</label>
+        <select id="siren-entity" class="sel"></select>
+      </div>
+      <div class="form-row">
+        <label>Alarm tone</label>
+        <input type="text" id="siren-tone" placeholder="Tone ID (blank = generic on/off)">
+      </div>
+      <div class="form-row">
+        <label>Volume</label>
+        <div class="vol-wrap">
+          <input type="range" id="siren-volume" min="0" max="1" step="0.05">
+          <input type="number" id="siren-volume-num" min="0" max="1" step="0.05" class="vol-num" placeholder="0–1">
         </div>
-      </div>`).join("")}
+      </div>
+      <div class="form-row">
+        <label>Repeat</label>
+        <div class="inline-wrap">
+          <input type="number" id="siren-repeat" min="0" max="300" class="short-num">
+          <span class="hint-inline">s between triggers (0 = play once)</span>
+        </div>
+      </div>
     </div>
-    <div class="row-end">
-      <button class="btn secondary" id="test-notif">Send Test</button>
-      <button class="btn" id="save-notif">Save Notifications</button>
+    <p class="sec-label" style="margin-top:24px">Entry warning tone</p>
+    <div class="form-card">
+      <div class="form-row">
+        <label>Pending tone</label>
+        <input type="text" id="pending-tone" placeholder="Tone ID (blank = silent during entry delay)">
+      </div>
+      <div class="form-row">
+        <label>Volume</label>
+        <div class="vol-wrap">
+          <input type="range" id="pending-volume" min="0" max="1" step="0.05">
+          <input type="number" id="pending-volume-num" min="0" max="1" step="0.05" class="vol-num" placeholder="0–1">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Repeat</label>
+        <div class="inline-wrap">
+          <input type="number" id="pending-repeat" min="0" max="300" class="short-num">
+          <span class="hint-inline">s between triggers (0 = play once)</span>
+        </div>
+      </div>
     </div>
-  `)}
+    <p class="sec-label" style="margin-top:24px">Chime mode</p>
+    <div class="form-card">
+      <div class="setting-row">
+        <div class="setting-text">
+          <div class="setting-title">Enable chime</div>
+          <div class="setting-sub">Plays a tone when a chime sensor opens while the alarm is disarmed</div>
+        </div>
+        <label class="sw"><input type="checkbox" id="chime-mode"><span class="sw-track"></span></label>
+      </div>
+      <div style="margin-top:14px">
+        <p class="field-label">Chime sensors</p>
+        <div id="chime-sensor-list" class="chime-sensor-list"><p class="muted">Loading…</p></div>
+      </div>
+      <div class="form-row" style="margin-top:12px">
+        <label>Chime tone</label>
+        <input type="text" id="chime-tone" placeholder="Tone ID">
+      </div>
+      <div class="form-row">
+        <label>Volume</label>
+        <div class="vol-wrap">
+          <input type="range" id="chime-volume" min="0" max="1" step="0.05">
+          <input type="number" id="chime-volume-num" min="0" max="1" step="0.05" class="vol-num" placeholder="0–1">
+        </div>
+      </div>
+    </div>
+    <div class="pane-footer">
+      <button class="btn" id="save-siren">Save siren &amp; chime</button>
+    </div>
+  </div>
 
-  ${this._card("chime", "Chime Mode", `
-    <label class="toggle-row">
-      <div>
-        <div class="toggle-label">Enable chime mode</div>
-        <div class="muted small">Plays a tone on the siren entity when a chime sensor opens while the alarm is disarmed.</div>
+  <!-- SETTINGS -->
+  <div id="tab-settings" class="tab-pane gone">
+    <div class="settings-stack">
+      <div class="setting-row">
+        <div class="setting-text">
+          <div class="setting-title">Require code to arm</div>
+          <div class="setting-sub">When off, arm buttons work without a PIN. Disarm always requires a code.</div>
+        </div>
+        <label class="sw"><input type="checkbox" id="arm-req" checked><span class="sw-track"></span></label>
       </div>
-      <input type="checkbox" id="chime-mode">
-    </label>
-    <div class="divider"></div>
-    <p class="sub-heading">Chime Sensors</p>
-    <div id="chime-sensor-list" class="sensor-list"><p class="muted">Loading…</p></div>
-    <div class="divider"></div>
-    <div class="field-row">
-      <label>Chime tone</label>
-      <input type="text" id="chime-tone" placeholder='e.g. 5 (tone ID on siren entity)'>
+      <div class="setting-row">
+        <div class="setting-text">
+          <div class="setting-title">Disarm after trigger</div>
+          <div class="setting-sub">When on, the alarm disarms automatically after the trigger duration. When off, it re-arms.</div>
+        </div>
+        <label class="sw"><input type="checkbox" id="disarm-after-trigger"><span class="sw-track"></span></label>
+      </div>
+      <div class="setting-row">
+        <div class="setting-text">
+          <div class="setting-title">Trigger duration</div>
+          <div class="setting-sub">How long the alarm stays triggered before auto-resolving. 0 = indefinite.</div>
+        </div>
+        <div class="inline-wrap">
+          <input type="number" id="trigger-time" min="0" max="3600" step="30" class="short-num">
+          <span class="hint-inline">seconds</span>
+        </div>
+      </div>
     </div>
-    <div class="field-row vol-row">
-      <label>Chime volume</label>
-      <input type="range"  id="chime-volume"     min="0" max="1" step="0.05" value="0">
-      <input type="number" id="chime-volume-num" min="0" max="1" step="0.05" value="0" class="vol-num" placeholder="0–1">
+    <div class="pane-footer">
+      <button class="btn" id="save-settings">Save settings</button>
     </div>
-    <p class="muted small" style="margin-bottom:12px">Volume 0 = use device default. Enter 0–1 (e.g. 0.75). Requires a tone ID to be set.</p>
-    <div class="row-end"><button class="btn" id="save-chime">Save Chime Settings</button></div>
-  `)}
+  </div>
 
-  ${this._card("general", "General Settings", `
-    <label class="toggle-row">
-      <div>
-        <div class="toggle-label">Require a code to arm</div>
-        <div class="muted small">When off, arm buttons work immediately. Disarm always requires a code.</div>
-      </div>
-      <input type="checkbox" id="arm-req" checked>
-    </label>
-    <div class="divider"></div>
-    <div class="field-row">
-      <label>Trigger duration</label>
-      <input type="number" class="num" id="trigger-time" min="0" max="3600" step="30" value="600">
-      <span class="muted">seconds (0 = indefinite)</span>
-    </div>
-    <label class="toggle-row">
-      <div>
-        <div class="toggle-label">Disarm after trigger</div>
-        <div class="muted small">When on, alarm automatically disarms after the trigger duration. When off, it returns to armed.</div>
-      </div>
-      <input type="checkbox" id="disarm-after-trigger">
-    </label>
-    <div class="divider"></div>
-    <div class="field-row">
-      <label>Siren entity</label>
-      <select id="siren-entity" class="sel-input"></select>
-    </div>
-    <div class="field-row">
-      <label>Alarm tone</label>
-      <input type="text" id="siren-tone" placeholder='e.g. 23 (leave blank for generic on/off)'>
-    </div>
-    <div class="field-row vol-row">
-      <label>Alarm volume</label>
-      <input type="range"  id="siren-volume"     min="0" max="1" step="0.05" value="0">
-      <input type="number" id="siren-volume-num" min="0" max="1" step="0.05" value="0" class="vol-num" placeholder="0–1">
-    </div>
-    <div class="field-row">
-      <label>Alarm repeat (s)</label>
-      <input type="number" class="num" id="siren-repeat" min="0" max="300" step="1" value="0">
-      <span class="muted">seconds (0 = play once)</span>
-    </div>
-    <p class="muted small" style="margin-bottom:12px">Tone and volume are passed to siren.turn_on. Without a tone, homeassistant.turn_on is used (works for switches too). Volume 0 = device default. Repeat re-triggers the tone every N seconds while the alarm is active.</p>
-    <div class="divider"></div>
-    <div class="field-row">
-      <label>Pending tone</label>
-      <input type="text" id="pending-tone" placeholder='e.g. 4 (played during entry delay; leave blank to disable)'>
-    </div>
-    <div class="field-row vol-row">
-      <label>Pending volume</label>
-      <input type="range"  id="pending-volume"     min="0" max="1" step="0.05" value="0">
-      <input type="number" id="pending-volume-num" min="0" max="1" step="0.05" value="0" class="vol-num" placeholder="0–1">
-    </div>
-    <div class="field-row">
-      <label>Pending repeat (s)</label>
-      <input type="number" class="num" id="pending-repeat" min="0" max="300" step="1" value="0">
-      <span class="muted">seconds (0 = play once)</span>
-    </div>
-    <p class="muted small" style="margin-bottom:12px">Warning tone played on the siren entity during the entry delay countdown. Requires a tone ID — if blank, no pending sound plays. Volume 0 = device default. Repeat re-triggers the tone every N seconds while pending.</p>
-    <div class="row-end"><button class="btn" id="save-general">Save</button></div>
-  `)}
 </div>
 <div id="toast" class="toast gone"></div>`;
 
@@ -285,63 +291,53 @@ class HaAlarmPanel extends HTMLElement {
     this._refreshBadge();
   }
 
-  _card(id, title, body) {
-    return `
-<div class="card">
-  <div class="card-header" data-id="${id}">
-    <span>${title}</span><span class="chevron" id="chev-${id}">▸</span>
-  </div>
-  <div class="card-body closed" id="body-${id}">${body}</div>
-</div>`;
-  }
-
   // ── Wire events ───────────────────────────────────────────────────────────
 
   _wire() {
     const sr = this.shadowRoot;
 
-    sr.querySelectorAll(".card-header").forEach(h => {
-      h.addEventListener("click", () => {
-        const body = sr.querySelector(`#body-${h.dataset.id}`);
-        const chev = sr.querySelector(`#chev-${h.dataset.id}`);
-        const open = !body.classList.contains("closed");
-        body.classList.toggle("closed", open);
-        chev.textContent = open ? "▸" : "▾";
+    // Tab switching
+    sr.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        sr.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        sr.querySelectorAll(".tab-pane").forEach(p => p.classList.add("gone"));
+        btn.classList.add("active");
+        this._activeTab = btn.dataset.tab;
+        sr.querySelector(`#tab-${this._activeTab}`)?.classList.remove("gone");
+        if (this._config) this._renderTab(this._activeTab);
       });
     });
 
-    sr.querySelector("#mode-tabs").addEventListener("click", e => {
-      const tab = e.target.closest(".tab");
-      if (!tab) return;
-      sr.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-      tab.classList.add("active");
-      this._activeMode = tab.dataset.mode;
-      this._renderSensors();
+    // Mode tabs
+    sr.querySelector("#mode-tabs")?.addEventListener("click", e => {
+      const btn = e.target.closest(".mode-btn");
+      if (!btn) return;
+      sr.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      this._activeMode = btn.dataset.mode;
+      this._bypassOpen = null;
+      if (this._config) {
+        this._renderSensors();
+        this._renderSelectedChips();
+      }
     });
 
-    // Volume sliders — keep range and number inputs in sync
-    const bindVolume = (sliderId, numId) => {
-      const slider = sr.querySelector(`#${sliderId}`);
-      const num    = sr.querySelector(`#${numId}`);
-      if (!slider || !num) return;
-      slider.addEventListener("input", () => { num.value = slider.value; });
-      num.addEventListener("input", () => {
-        const v = Math.min(1, Math.max(0, parseFloat(num.value) || 0));
-        slider.value = v;
-      });
-    };
-    bindVolume("siren-volume",    "siren-volume-num");
-    bindVolume("pending-volume",  "pending-volume-num");
-    bindVolume("chime-volume",    "chime-volume-num");
+    // Volume slider ↔ number sync
+    for (const [sid, nid] of [["siren-volume","siren-volume-num"],["pending-volume","pending-volume-num"],["chime-volume","chime-volume-num"]]) {
+      const s = sr.querySelector(`#${sid}`), n = sr.querySelector(`#${nid}`);
+      if (s && n) {
+        s.addEventListener("input", () => { n.value = parseFloat(s.value).toFixed(2); });
+        n.addEventListener("input", () => { s.value = Math.min(1, Math.max(0, parseFloat(n.value) || 0)); });
+      }
+    }
 
-    sr.querySelector("#save-sensors") .addEventListener("click", () => this._saveSensors());
-    sr.querySelector("#add-bypass")   .addEventListener("click", () => this._addBypass());
-    sr.querySelector("#save-delays")  .addEventListener("click", () => this._saveDelays());
-    sr.querySelector("#add-user")     .addEventListener("click", () => this._addUser());
-    sr.querySelector("#save-notif")   .addEventListener("click", () => this._saveNotif());
-    sr.querySelector("#test-notif")   .addEventListener("click", () => this._testNotif());
-    sr.querySelector("#save-chime")   .addEventListener("click", () => this._saveChime());
-    sr.querySelector("#save-general") .addEventListener("click", () => this._saveGeneral());
+    sr.querySelector("#save-sensors") ?.addEventListener("click", () => this._saveSensors());
+    sr.querySelector("#save-delays")  ?.addEventListener("click", () => this._saveDelays());
+    sr.querySelector("#add-user")     ?.addEventListener("click", () => this._addUser());
+    sr.querySelector("#save-notif")   ?.addEventListener("click", () => this._saveNotif());
+    sr.querySelector("#test-notif")   ?.addEventListener("click", () => this._testNotif());
+    sr.querySelector("#save-siren")   ?.addEventListener("click", () => this._saveSiren());
+    sr.querySelector("#save-settings")?.addEventListener("click", () => this._saveSettings());
   }
 
   // ── Populate ──────────────────────────────────────────────────────────────
@@ -349,14 +345,18 @@ class HaAlarmPanel extends HTMLElement {
   _populate() {
     this._refreshBadge();
     this._refreshOpenWarning();
-    this._renderSensors();
-    this._populateSensorSummary();
-    this._populateBypasses();
-    this._populateDelays();
-    this._populateCodes();
-    this._populateNotif();
-    this._populateChime();
-    this._populateGeneral();
+    this._renderTab(this._activeTab);
+  }
+
+  _renderTab(tab) {
+    switch (tab) {
+      case "sensors":       this._renderSensors(); this._renderSelectedChips(); break;
+      case "delays":        this._renderDelays(); break;
+      case "users":         this._renderUsers(); break;
+      case "notifications": this._renderNotifications(); break;
+      case "siren":         this._renderSiren(); break;
+      case "settings":      this._renderSettings(); break;
+    }
   }
 
   _refreshBadge() {
@@ -375,117 +375,194 @@ class HaAlarmPanel extends HTMLElement {
 
   _refreshOpenWarning() {
     const banner = this.shadowRoot.querySelector("#open-warning");
-    const detail = this.shadowRoot.querySelector("#open-warning-detail");
-    if (!banner || !detail || !this._config) return;
-
+    if (!banner || !this._config) return;
     const bypassed = new Set(Object.keys(this._config.bypassed_sensors || {}));
     const affected = [];
-
     MODES.forEach(m => {
-      const assigned = this._config.sensors?.[m.key] || [];
-      const open = assigned.filter(id =>
+      const open = (this._config.sensors?.[m.key] || []).filter(id =>
         !bypassed.has(id) && this._hass.states[id]?.state === "on"
       );
       if (open.length) {
-        const names = open.map(id =>
-          this._hass.states[id]?.attributes?.friendly_name || id
-        ).join(", ");
-        affected.push(`<span class="warn-mode">${m.label}:</span> ${names}`);
+        const names = open.map(id => this._hass.states[id]?.attributes?.friendly_name || id).join(", ");
+        affected.push(`<strong>${m.label}:</strong> ${names}`);
       }
     });
-
-    if (!affected.length) {
-      banner.classList.add("gone");
-      return;
-    }
-    banner.classList.remove("gone");
-    detail.innerHTML = affected.join("<br>");
+    if (!affected.length) { banner.className = "open-warning gone"; return; }
+    banner.className = "open-warning";
+    banner.innerHTML = `<span class="warn-icon">⚠</span><div><div class="warn-title">Open sensors — arming blocked</div><div class="warn-detail">${affected.join("<br>")}</div></div>`;
   }
 
-  // ── Sensors ───────────────────────────────────────────────────────────────
+  // ── Sensors tab ───────────────────────────────────────────────────────────
 
   _binarySensors() {
     return Object.values(this._hass.states)
       .filter(s => s.entity_id.startsWith("binary_sensor."))
-      .sort((a, b) => (a.attributes.friendly_name || a.entity_id)
-        .localeCompare(b.attributes.friendly_name || b.entity_id));
+      .sort((a, b) => (a.attributes.friendly_name || a.entity_id).localeCompare(b.attributes.friendly_name || b.entity_id));
+  }
+
+  _renderSelectedChips() {
+    const el = this.shadowRoot.querySelector("#selected-chips");
+    if (!el) return;
+    const selected = this._pendingSensors[this._activeMode] ?? new Set(this._config?.sensors?.[this._activeMode] || []);
+    const bypassed = this._config?.bypassed_sensors || {};
+    if (!selected.size) {
+      el.innerHTML = `<span class="chips-empty">No sensors selected for this mode</span>`;
+      return;
+    }
+    el.innerHTML = [...selected].map(id => {
+      const state = this._hass.states[id];
+      const name  = state?.attributes?.friendly_name || id;
+      const open  = state?.state === "on";
+      const byp   = bypassed[id] !== undefined;
+      return `<span class="sel-chip${open ? " open" : byp ? " bypassed" : ""}" title="${id}">
+        ${name}
+        <button class="chip-x" data-id="${id}">×</button>
+      </span>`;
+    }).join("");
+    el.querySelectorAll(".chip-x").forEach(btn => {
+      btn.addEventListener("click", e => {
+        e.stopPropagation();
+        const pending = new Set(this._pendingSensors[this._activeMode] ?? (this._config?.sensors?.[this._activeMode] || []));
+        pending.delete(btn.dataset.id);
+        this._pendingSensors[this._activeMode] = pending;
+        this._renderSensors();
+        this._renderSelectedChips();
+      });
+    });
   }
 
   _renderSensors() {
     const sr        = this.shadowRoot;
     const container = sr.querySelector("#sensor-list");
     if (!container) return;
-    // Use pending (unsaved) selections if the user has touched checkboxes since last save
-    const selected  = this._pendingSensors[this._activeMode]
-      ?? new Set(this._config?.sensors?.[this._activeMode] || []);
-    const bypassed  = new Set(Object.keys(this._config?.bypassed_sensors || {}));
-    const classes   = MODE_CLASSES[this._activeMode];
-    const all       = this._binarySensors();
+
+    const selected = this._pendingSensors[this._activeMode] ?? new Set(this._config?.sensors?.[this._activeMode] || []);
+    const bypasses = this._config?.bypassed_sensors || {};
+    const classes  = MODE_CLASSES[this._activeMode];
+    const all      = this._binarySensors();
     const suggested = classes ? all.filter(s => classes.includes(s.attributes.device_class)) : all;
     const others    = classes ? all.filter(s => !classes.includes(s.attributes.device_class)) : [];
 
-    // Sort: selected+open → selected+closed → unselected+open → unselected+closed
     const isOpen = s => this._hass.states[s.entity_id]?.state === "on";
-    const sortSensors = arr => arr.slice().sort((a, b) => {
+    const sortGroup = arr => arr.slice().sort((a, b) => {
       const asel = selected.has(a.entity_id), bsel = selected.has(b.entity_id);
-      const aopn = isOpen(a),                 bopn = isOpen(b);
+      const aopn = isOpen(a), bopn = isOpen(b);
       const arank = asel && aopn ? 0 : asel ? 1 : aopn ? 2 : 3;
       const brank = bsel && bopn ? 0 : bsel ? 1 : bopn ? 2 : 3;
-      if (arank !== brank) return arank - brank;
-      return (a.attributes.friendly_name || a.entity_id)
-        .localeCompare(b.attributes.friendly_name || b.entity_id);
+      return arank !== brank ? arank - brank : (a.attributes.friendly_name || a.entity_id).localeCompare(b.attributes.friendly_name || b.entity_id);
     });
 
+    const bypassLabel = until => {
+      if (until === BYPASS_ONE_CYCLE) return "bypass: one cycle";
+      if (until === BYPASS_INDEFINITE) return "bypass: indefinite";
+      const rem = until - Math.floor(Date.now() / 1000);
+      if (rem < 3600)  return `bypass: ${Math.ceil(rem/60)}m left`;
+      if (rem < 86400) return `bypass: ${Math.ceil(rem/3600)}h left`;
+      return `bypass: ${Math.ceil(rem/86400)}d left`;
+    };
+
     const row = s => {
-      const name       = s.attributes.friendly_name || s.entity_id;
-      const dc         = s.attributes.device_class   || "—";
-      const isBypassed = bypassed.has(s.entity_id);
-      const open       = isOpen(s);
-      let chipHtml;
-      if (isBypassed)  chipHtml = `<span class="chip warn">bypassed</span>`;
-      else if (open)   chipHtml = `<span class="chip danger">open</span>`;
-      else             chipHtml = `<span class="chip">${dc}</span>`;
-      return `<label class="sensor-row${open ? " sensor-open" : ""}">
-        <input type="checkbox" class="s-cb" value="${s.entity_id}" ${selected.has(s.entity_id) ? "checked" : ""}>
-        <span class="s-name">${name}</span>
-        ${chipHtml}
-      </label>`;
+      const name    = s.attributes.friendly_name || s.entity_id;
+      const dc      = s.attributes.device_class || "sensor";
+      const open    = isOpen(s);
+      const byp     = bypasses[s.entity_id];
+      const hasByp  = byp !== undefined;
+      const bpOpen  = this._bypassOpen === s.entity_id;
+
+      const stateChip = hasByp
+        ? `<span class="chip warn">${bypassLabel(byp)}</span>`
+        : open
+          ? `<span class="chip danger">open</span>`
+          : `<span class="chip dc">${dc}</span>`;
+
+      const bypassCtrl = hasByp
+        ? `<button class="bypass-clear" data-id="${s.entity_id}">Clear bypass</button>`
+        : `<button class="bypass-add${bpOpen ? " active" : ""}" data-id="${s.entity_id}">Bypass</button>`;
+
+      const picker = bpOpen ? `
+        <div class="bypass-picker">
+          <button class="byp-dur" data-dur="0">One cycle</button>
+          <button class="byp-dur" data-dur="86400">24 hours</button>
+          <button class="byp-dur" data-dur="604800">7 days</button>
+          <button class="byp-dur" data-dur="-1">Indefinite</button>
+          <button class="byp-cancel">✕</button>
+        </div>` : "";
+
+      return `<div class="sensor-row${open && !hasByp ? " s-open" : ""}${hasByp ? " s-bypassed" : ""}">
+        <label class="sensor-label">
+          <input type="checkbox" class="s-cb" value="${s.entity_id}" ${selected.has(s.entity_id) ? "checked" : ""}>
+          <span class="sensor-name">${name}</span>
+        </label>
+        ${stateChip}
+        ${bypassCtrl}
+        ${picker}
+      </div>`;
     };
 
     let html = "";
-    const sortedSuggested = sortSensors(suggested);
-    if (sortedSuggested.length) {
-      html += `<div class="group-label">${classes ? "Suggested for this mode" : "All sensors"}</div>`;
-      html += sortedSuggested.map(row).join("");
+    const sortedMain = sortGroup(suggested);
+    if (sortedMain.length) {
+      html += `<p class="group-hdr">${classes ? "Suggested sensors" : "All sensors"}</p>`;
+      html += sortedMain.map(row).join("");
     }
-    const sortedOthers = sortSensors(others);
+    const sortedOthers = sortGroup(others);
     if (sortedOthers.length) {
       const show = this._showOthers[this._activeMode];
-      html += `<div class="group-label toggle-others" data-mode="${this._activeMode}">
-        Other sensors (${sortedOthers.length}) ${show ? "▾" : "▸"}
-      </div>
-      <div class="${show ? "" : "gone"}" id="others-${this._activeMode}">
-        ${sortedOthers.map(row).join("")}
-      </div>`;
+      html += `<button class="group-hdr toggle-others" data-mode="${this._activeMode}">
+        Other sensors (${sortedOthers.length}) <span>${show ? "▾" : "▸"}</span>
+      </button>`;
+      if (show) html += sortedOthers.map(row).join("");
     }
     if (!html) html = `<p class="muted">No binary sensors found in Home Assistant.</p>`;
 
     container.innerHTML = html;
-    container.querySelectorAll(".toggle-others").forEach(el =>
-      el.addEventListener("click", () => {
-        this._showOthers[el.dataset.mode] = !this._showOthers[el.dataset.mode];
+
+    container.querySelectorAll(".toggle-others").forEach(btn =>
+      btn.addEventListener("click", () => {
+        this._showOthers[btn.dataset.mode] = !this._showOthers[btn.dataset.mode];
         this._renderSensors();
       })
     );
-
-    // Record checkbox changes into pending state so hass re-renders don't reset them
-    container.querySelectorAll(".s-cb").forEach(cb => {
+    container.querySelectorAll(".s-cb").forEach(cb =>
       cb.addEventListener("change", () => {
         this._pendingSensors[this._activeMode] = new Set(
           [...container.querySelectorAll(".s-cb:checked")].map(c => c.value)
         );
-      });
-    });
+        this._renderSelectedChips();
+      })
+    );
+    container.querySelectorAll(".bypass-add").forEach(btn =>
+      btn.addEventListener("click", e => {
+        e.stopPropagation();
+        this._bypassOpen = this._bypassOpen === btn.dataset.id ? null : btn.dataset.id;
+        this._renderSensors();
+      })
+    );
+    container.querySelectorAll(".byp-dur").forEach(btn =>
+      btn.addEventListener("click", async () => {
+        const sid = btn.closest(".sensor-row").querySelector(".bypass-add, .bypass-clear")?.dataset.id
+          || this._bypassOpen;
+        const dur = parseInt(btn.dataset.dur, 10);
+        await this._api("POST", "bypass/add", { sensor_id: sid, duration: dur });
+        this._bypassOpen = null;
+        this._config = await this._api("GET", "config");
+        this._renderSensors();
+        this._renderSelectedChips();
+        this._toast("Bypass set ✓");
+      })
+    );
+    container.querySelectorAll(".byp-cancel").forEach(btn =>
+      btn.addEventListener("click", () => { this._bypassOpen = null; this._renderSensors(); })
+    );
+    container.querySelectorAll(".bypass-clear").forEach(btn =>
+      btn.addEventListener("click", async () => {
+        await this._api("POST", "bypass/remove", { sensor_id: btn.dataset.id });
+        this._config = await this._api("GET", "config");
+        this._renderSensors();
+        this._renderSelectedChips();
+        this._toast("Bypass cleared ✓");
+      })
+    );
   }
 
   async _saveSensors() {
@@ -494,153 +571,46 @@ class HaAlarmPanel extends HTMLElement {
     await this._api("POST", "sensors", sensors);
     if (this._config) this._config.sensors = sensors;
     delete this._pendingSensors[this._activeMode];
-    this._populateSensorSummary();
+    this._renderSelectedChips();
     this._toast("Sensors saved ✓");
   }
 
-  _populateSensorSummary() {
-    const el = this.shadowRoot.querySelector("#sensor-summary");
-    if (!el || !this._config) return;
-    const sensors = this._config.sensors || {};
-    let html = "";
-    let any = false;
-    MODES.forEach(m => {
-      const ids = sensors[m.key] || [];
-      if (!ids.length) return;
-      any = true;
-      const chips = ids.map(id => {
-        const state = this._hass.states[id];
-        const name  = state?.attributes?.friendly_name || id;
-        const open  = state?.state === "on";
-        return `<button class="summary-chip${open ? " danger" : ""}" data-mode="${m.key}" data-id="${id}" title="Remove from ${m.label}">${name} <span class="chip-x">×</span></button>`;
-      }).join("");
-      html += `<div class="summary-group">
-        <div class="sub-heading">${m.label} <span class="muted">(${ids.length})</span></div>
-        <div class="summary-chips">${chips}</div>
-      </div>`;
-    });
-    el.innerHTML = any ? html : `<p class="muted">No sensors configured yet.</p>`;
-    el.querySelectorAll(".summary-chip").forEach(btn =>
-      btn.addEventListener("click", () => this._removeSensorFromMode(btn.dataset.mode, btn.dataset.id))
-    );
-  }
+  // ── Delays tab ────────────────────────────────────────────────────────────
 
-  async _removeSensorFromMode(mode, sensorId) {
-    const sensors = { ...(this._config?.sensors || {}) };
-    sensors[mode] = (sensors[mode] || []).filter(id => id !== sensorId);
-    await this._api("POST", "sensors", sensors);
-    if (this._config) this._config.sensors = sensors;
-    delete this._pendingSensors[mode];
-    this._populateSensorSummary();
-    if (this._activeMode === mode) this._renderSensors();
-    this._toast("Sensor removed ✓");
-  }
-
-  // ── Bypass ────────────────────────────────────────────────────────────────
-
-  _modeSensors() {
-    const sensors = this._config?.sensors || {};
-    const seen    = new Set();
-    const result  = [];
-    Object.values(sensors).forEach(list => {
-      (list || []).forEach(id => {
-        if (!seen.has(id)) {
-          seen.add(id);
-          const state = this._hass.states[id];
-          result.push({ entity_id: id, attributes: state?.attributes || {} });
-        }
-      });
-    });
-    return result.sort((a, b) => {
-      const aOpen = this._hass.states[a.entity_id]?.state === "on";
-      const bOpen = this._hass.states[b.entity_id]?.state === "on";
-      if (aOpen !== bOpen) return aOpen ? -1 : 1;
-      return (a.attributes.friendly_name || a.entity_id)
-        .localeCompare(b.attributes.friendly_name || b.entity_id);
-    });
-  }
-
-  _populateBypasses() {
-    const sr = this.shadowRoot;
-
-    const sel = sr.querySelector("#bypass-sensor-sel");
-    if (sel) {
-      const sensors = this._modeSensors();
-      sel.innerHTML = sensors.length
-        ? sensors.map(s => {
-            const name   = s.attributes.friendly_name || s.entity_id;
-            const isOpen = this._hass.states[s.entity_id]?.state === "on";
-            const label  = isOpen ? `⚠ ${name} (open)` : name;
-            return `<option value="${s.entity_id}">${label}</option>`;
-          }).join("")
-        : `<option value="">No mode sensors configured yet</option>`;
-    }
-
-    const list = sr.querySelector("#bypass-list");
-    if (!list) return;
-    const bypasses = this._config?.bypassed_sensors || {};
-    const entries  = Object.entries(bypasses);
-    if (!entries.length) {
-      list.innerHTML = `<p class="muted">No sensors currently bypassed.</p>`;
-      return;
-    }
-    const now = Math.floor(Date.now() / 1000);
-    list.innerHTML = entries.map(([sid, until]) => {
-      const state = this._hass.states[sid];
-      const name  = state?.attributes?.friendly_name || sid;
-      let expiry;
-      if (until === BYPASS_ONE_CYCLE)       expiry = "One arm cycle";
-      else if (until === BYPASS_INDEFINITE) expiry = "Indefinite";
-      else {
-        const rem = until - now;
-        if (rem < 3600)       expiry = `${Math.ceil(rem / 60)}m remaining`;
-        else if (rem < 86400) expiry = `${Math.ceil(rem / 3600)}h remaining`;
-        else                  expiry = `${Math.ceil(rem / 86400)}d remaining`;
-      }
-      return `<div class="user-row">
-        <span class="user-name">${name}</span>
-        <span class="chip warn">${expiry}</span>
-        <button class="btn-ghost danger rm-bypass" data-sid="${sid}">Clear</button>
+  _renderDelays() {
+    const el = this.shadowRoot.querySelector("#delays-grid");
+    if (!el) return;
+    const delays = this._config?.delays || {};
+    el.innerHTML = MODES.map(m => {
+      const d = delays[m.key] || {};
+      return `<div class="delay-card">
+        <div class="delay-mode">${m.label}</div>
+        <div class="delay-fields">
+          <div class="delay-field">
+            <label>Entry delay</label>
+            <div class="inline-wrap">
+              <input type="number" class="short-num delay-inp" min="0" max="600" step="5"
+                data-mode="${m.key}" data-t="entry_delay" value="${d.entry_delay ?? 30}">
+              <span class="hint-inline">sec</span>
+            </div>
+          </div>
+          <div class="delay-field">
+            <label>Exit delay</label>
+            <div class="inline-wrap">
+              <input type="number" class="short-num delay-inp" min="0" max="600" step="5"
+                data-mode="${m.key}" data-t="exit_delay" value="${d.exit_delay ?? 60}">
+              <span class="hint-inline">sec</span>
+            </div>
+          </div>
+        </div>
       </div>`;
     }).join("");
-    list.querySelectorAll(".rm-bypass").forEach(btn =>
-      btn.addEventListener("click", () => this._removeBypass(btn.dataset.sid))
-    );
-  }
-
-  async _addBypass() {
-    const sr  = this.shadowRoot;
-    const sid = sr.querySelector("#bypass-sensor-sel")?.value;
-    const dur = parseInt(sr.querySelector("#bypass-duration-sel")?.value ?? "0", 10);
-    if (!sid) return this._toast("Select a sensor", true);
-    await this._api("POST", "bypass/add", { sensor_id: sid, duration: dur });
-    this._config = await this._api("GET", "config");
-    this._populateBypasses();
-    this._renderSensors();
-    this._toast("Bypass added ✓");
-  }
-
-  async _removeBypass(sid) {
-    await this._api("POST", "bypass/remove", { sensor_id: sid });
-    this._config = await this._api("GET", "config");
-    this._populateBypasses();
-    this._renderSensors();
-    this._toast("Bypass cleared ✓");
-  }
-
-  // ── Delays ────────────────────────────────────────────────────────────────
-
-  _populateDelays() {
-    this.shadowRoot.querySelectorAll(".num[data-mode]").forEach(inp => {
-      const v = this._config?.delays?.[inp.dataset.mode]?.[inp.dataset.t];
-      if (v !== undefined) inp.value = v;
-    });
   }
 
   async _saveDelays() {
     const delays = {};
-    MODES.forEach(m => { delays[m.key] = { entry_delay: 0, exit_delay: 0 }; });
-    this.shadowRoot.querySelectorAll(".num[data-mode]").forEach(inp => {
+    MODES.forEach(m => { delays[m.key] = {}; });
+    this.shadowRoot.querySelectorAll(".delay-inp").forEach(inp => {
       delays[inp.dataset.mode][inp.dataset.t] = parseInt(inp.value, 10) || 0;
     });
     await this._api("POST", "delays", delays);
@@ -648,19 +618,21 @@ class HaAlarmPanel extends HTMLElement {
     this._toast("Delays saved ✓");
   }
 
-  // ── Codes ─────────────────────────────────────────────────────────────────
+  // ── Users tab ─────────────────────────────────────────────────────────────
 
-  _populateCodes() {
-    const el = this.shadowRoot.querySelector("#codes-list");
+  _renderUsers() {
+    const el = this.shadowRoot.querySelector("#users-list");
     if (!el) return;
     const codes = this._config?.codes || [];
     if (!codes.length) { el.innerHTML = `<p class="muted">No users configured.</p>`; return; }
-    el.innerHTML = codes.map(c => `
-      <div class="user-row">
-        <span class="user-name">${c.name}</span>
-        ${c.is_admin ? `<span class="chip primary">Admin</span>` : ""}
-        <button class="btn-ghost danger rm-user" data-name="${c.name}">Remove</button>
-      </div>`).join("");
+    el.innerHTML = `<div class="user-cards">${codes.map(c => `
+      <div class="user-card">
+        <div class="user-meta">
+          <span class="user-name">${c.name}</span>
+          <span class="role-chip${c.is_admin ? "" : " user"}">${c.is_admin ? "Admin" : "User"}</span>
+        </div>
+        <button class="icon-btn danger rm-user" data-name="${c.name}" title="Remove ${c.name}">✕</button>
+      </div>`).join("")}</div>`;
     el.querySelectorAll(".rm-user").forEach(btn =>
       btn.addEventListener("click", () => this._removeUser(btn.dataset.name))
     );
@@ -678,7 +650,7 @@ class HaAlarmPanel extends HTMLElement {
     sr.querySelector("#new-code").value    = "";
     sr.querySelector("#new-admin").checked = false;
     this._config = await this._api("GET", "config");
-    this._populateCodes();
+    this._renderUsers();
     this._toast("User added ✓");
   }
 
@@ -686,52 +658,60 @@ class HaAlarmPanel extends HTMLElement {
     if (!confirm(`Remove user "${name}"?`)) return;
     await this._api("POST", "codes/remove", { name });
     this._config = await this._api("GET", "config");
-    this._populateCodes();
+    this._renderUsers();
     this._toast("User removed ✓");
   }
 
-  // ── Notifications ─────────────────────────────────────────────────────────
+  // ── Notifications tab ─────────────────────────────────────────────────────
 
-  _populateNotif() {
-    const n              = this._config?.notifications || {};
+  _renderNotifications() {
+    const sr = this.shadowRoot;
+    const n  = this._config?.notifications || {};
     const enabledTargets = new Set(n.notify_targets || []);
 
-    const container = this.shadowRoot.querySelector("#notif-services");
+    const container = sr.querySelector("#notif-services");
     if (container) {
-      const notifySvcs = this._hass?.services?.notify || {};
-      const available  = Object.keys(notifySvcs).sort((a, b) => {
-        const aOn = enabledTargets.has(`notify.${a}`);
-        const bOn = enabledTargets.has(`notify.${b}`);
-        if (aOn !== bOn) return aOn ? -1 : 1;
-        return a.localeCompare(b);
+      const svcs      = this._hass?.services?.notify || {};
+      const available = Object.keys(svcs).sort((a, b) => {
+        const ao = enabledTargets.has(`notify.${a}`), bo = enabledTargets.has(`notify.${b}`);
+        return ao !== bo ? (ao ? -1 : 1) : a.localeCompare(b);
       });
       if (!available.length) {
-        container.innerHTML = `<p class="muted">No notify services found. Add a notification integration (e.g. Mobile App) first.</p>`;
+        container.innerHTML = `<p class="muted">No notify services found. Add a Mobile App integration first.</p>`;
       } else {
         container.innerHTML = available.map(s => {
-          const fullId  = `notify.${s}`;
-          const label   = s.replace(/_/g, " ");
-          const checked = enabledTargets.has(fullId) ? "checked" : "";
-          return `<label class="svc-row">
-            <input type="checkbox" class="svc-cb" value="${fullId}" ${checked}>
+          const id      = `notify.${s}`;
+          const label   = s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+          const checked = enabledTargets.has(id) ? "checked" : "";
+          return `<label class="svc-card${enabledTargets.has(id) ? " on" : ""}">
+            <input type="checkbox" class="svc-cb" value="${id}" ${checked}>
             <span class="svc-name">${label}</span>
-            <span class="chip">${fullId}</span>
+            <code class="svc-id">${id}</code>
           </label>`;
         }).join("");
+        // Update styling on toggle
+        container.querySelectorAll(".svc-cb").forEach(cb =>
+          cb.addEventListener("change", () => cb.closest(".svc-card").classList.toggle("on", cb.checked))
+        );
       }
     }
 
-    const hp = this.shadowRoot.querySelector("#notif-high-priority");
+    const hp = sr.querySelector("#notif-high-priority");
     if (hp) hp.checked = n.high_priority === true;
 
     const evts = n.notify_events || {};
     const msgs = n.messages      || {};
-    this.shadowRoot.querySelectorAll(".ev-cb").forEach(cb => {
-      cb.checked = evts[cb.dataset.event] !== false;
-    });
-    this.shadowRoot.querySelectorAll(".ev-msg").forEach(inp => {
-      inp.value = msgs[inp.dataset.event] || "";
-    });
+    const evtEl = sr.querySelector("#event-rows");
+    if (evtEl) {
+      evtEl.innerHTML = ALL_EVENTS.map(e => `
+        <div class="event-row">
+          <label class="event-check">
+            <input type="checkbox" class="ev-cb" data-event="${e}" ${evts[e] !== false ? "checked" : ""}>
+            <span class="event-lbl">${EVENT_LABELS[e]}</span>
+          </label>
+          <input type="text" class="ev-msg" data-event="${e}" value="${msgs[e] || ""}" placeholder="${DEFAULT_MESSAGES[e]}">
+        </div>`).join("");
+    }
   }
 
   async _saveNotif() {
@@ -753,184 +733,142 @@ class HaAlarmPanel extends HTMLElement {
   }
 
   async _testNotif() {
-    const notif   = this._config?.notifications || {};
-    const targets = notif.notify_targets || [];
-    if (!targets.length) {
-      this._toast("No notification targets configured", true);
-      return;
-    }
-    const svcData = {
-      title:   "HA Alarm — Test",
-      message: "Test notification from HA Alarm. If you see this, notifications are working correctly.",
-    };
-    if (notif.high_priority) {
-      svcData.data = {
-        ttl:      0,
-        priority: "high",
-        push:     { "interruption-level": "time-sensitive" },
-      };
-    }
+    const n = this._config?.notifications || {};
+    const targets = n.notify_targets || [];
+    if (!targets.length) return this._toast("No notification targets configured", true);
+    const data = { title: "HA Alarm — Test", message: "Test notification from HA Alarm. Delivery confirmed." };
+    if (n.high_priority) data.data = { ttl: 0, priority: "high", push: { "interruption-level": "time-sensitive" } };
     try {
-      for (const target of targets) {
-        const dot    = target.indexOf(".");
-        const domain = target.slice(0, dot);
-        const svc    = target.slice(dot + 1);
-        await this._hass.callService(domain, svc, svcData);
+      for (const t of targets) {
+        const dot = t.indexOf(".");
+        await this._hass.callService(t.slice(0, dot), t.slice(dot + 1), data);
       }
       this._toast(`Test sent to ${targets.length} target${targets.length > 1 ? "s" : ""} ✓`);
     } catch (e) {
-      this._toast(e?.message || "Failed to send test notification", true);
+      this._toast(e?.message || "Failed to send test", true);
     }
   }
 
-  // ── Chime ─────────────────────────────────────────────────────────────────
+  // ── Siren & Chime tab ─────────────────────────────────────────────────────
 
-  _populateChime() {
-    const sr   = this.shadowRoot;
-    const mode = sr.querySelector("#chime-mode");
-    if (mode) mode.checked = this._config?.chime_mode === true;
+  _renderSiren() {
+    const sr = this.shadowRoot;
 
-    const chimeTone = sr.querySelector("#chime-tone");
-    if (chimeTone) chimeTone.value = this._config?.chime_tone || "";
-
-    const chimeVol = this._config?.chime_volume ?? 0;
-    const chimeSlider = sr.querySelector("#chime-volume");
-    const chimeNum    = sr.querySelector("#chime-volume-num");
-    if (chimeSlider) chimeSlider.value = chimeVol;
-    if (chimeNum)    chimeNum.value    = chimeVol;
-
-    const container   = sr.querySelector("#chime-sensor-list");
-    if (!container) return;
-    const chimeSensors = new Set(this._config?.chime_sensors || []);
-    const all = this._binarySensors().sort((a, b) => {
-      const aOn = chimeSensors.has(a.entity_id);
-      const bOn = chimeSensors.has(b.entity_id);
-      if (aOn !== bOn) return aOn ? -1 : 1;
-      return (a.attributes.friendly_name || a.entity_id)
-        .localeCompare(b.attributes.friendly_name || b.entity_id);
-    });
-    if (!all.length) {
-      container.innerHTML = `<p class="muted">No binary sensors found.</p>`;
-      return;
-    }
-    container.innerHTML = all.map(s => {
-      const name = s.attributes.friendly_name || s.entity_id;
-      const dc   = s.attributes.device_class   || "—";
-      return `<label class="sensor-row">
-        <input type="checkbox" class="chime-cb" value="${s.entity_id}" ${chimeSensors.has(s.entity_id) ? "checked" : ""}>
-        <span class="s-name">${name}</span>
-        <span class="chip">${dc}</span>
-      </label>`;
-    }).join("");
-  }
-
-  async _saveChime() {
-    const sr           = this.shadowRoot;
-    const chime_mode    = sr.querySelector("#chime-mode")?.checked ?? false;
-    const chime_sensors = [...sr.querySelectorAll(".chime-cb:checked")].map(cb => cb.value);
-    const chime_tone    = sr.querySelector("#chime-tone")?.value.trim() || "";
-    const chime_volume  = parseFloat(sr.querySelector("#chime-volume-num")?.value || "0");
-    await this._api("POST", "chime", { chime_mode, chime_sensors, chime_tone, chime_volume });
-    if (this._config) {
-      this._config.chime_mode    = chime_mode;
-      this._config.chime_sensors = chime_sensors;
-      this._config.chime_tone    = chime_tone;
-      this._config.chime_volume  = chime_volume;
-    }
-    this._toast("Chime settings saved ✓");
-  }
-
-  // ── General ───────────────────────────────────────────────────────────────
-
-  _sirenEntities() {
-    return Object.values(this._hass.states)
-      .filter(s => SIREN_DOMAINS.some(d => s.entity_id.startsWith(d + ".")))
-      .sort((a, b) => (a.attributes.friendly_name || a.entity_id)
-        .localeCompare(b.attributes.friendly_name || b.entity_id));
-  }
-
-  _populateGeneral() {
-    const sr     = this.shadowRoot;
-    const armReq = sr.querySelector("#arm-req");
-    if (armReq) armReq.checked = this._config?.code_arm_required !== false;
-
-    const tt = sr.querySelector("#trigger-time");
-    if (tt) tt.value = this._config?.trigger_time ?? 600;
-
-    const dat = sr.querySelector("#disarm-after-trigger");
-    if (dat) dat.checked = this._config?.disarm_after_trigger === true;
-
-    // Populate siren entity dropdown
-    const sirenSel    = sr.querySelector("#siren-entity");
-    const currentSiren = this._config?.siren_entity || "";
+    // Siren entity select
+    const sirenSel = sr.querySelector("#siren-entity");
+    const cur      = this._config?.siren_entity || "";
     if (sirenSel) {
-      const entities = this._sirenEntities();
-      const grouped  = {};
+      const entities = Object.values(this._hass.states)
+        .filter(s => s.entity_id.startsWith("siren."))
+        .sort((a, b) => (a.attributes.friendly_name || a.entity_id).localeCompare(b.attributes.friendly_name || b.entity_id));
+      let opts = `<option value="">— None —</option>`;
       entities.forEach(e => {
-        const domain = e.entity_id.split(".")[0];
-        (grouped[domain] = grouped[domain] || []).push(e);
+        const name = e.attributes.friendly_name || e.entity_id;
+        opts += `<option value="${e.entity_id}"${e.entity_id === cur ? " selected" : ""}>${name}</option>`;
       });
-      let opts = `<option value="">— None (no siren) —</option>`;
-      Object.entries(grouped).forEach(([domain, list]) => {
-        opts += `<optgroup label="${domain}">`;
-        list.forEach(e => {
-          const name = e.attributes.friendly_name || e.entity_id;
-          const sel  = e.entity_id === currentSiren ? " selected" : "";
-          opts += `<option value="${e.entity_id}"${sel}>${name} (${e.entity_id})</option>`;
-        });
-        opts += `</optgroup>`;
-      });
-      // If current value isn't in states, add it so we don't lose it
-      if (currentSiren && !entities.find(e => e.entity_id === currentSiren)) {
-        opts += `<option value="${currentSiren}" selected>${currentSiren}</option>`;
-      }
+      if (cur && !entities.find(e => e.entity_id === cur))
+        opts += `<option value="${cur}" selected>${cur}</option>`;
       sirenSel.innerHTML = opts;
     }
 
-    // Siren tone / volume / repeat
-    const sirenTone = sr.querySelector("#siren-tone");
-    if (sirenTone) sirenTone.value = this._config?.siren_tone || "";
+    const set = (id, v) => { const el = sr.querySelector(`#${id}`); if (el) el.value = v ?? ""; };
+    set("siren-tone",        this._config?.siren_tone    || "");
+    set("siren-volume",      this._config?.siren_volume  ?? 0);
+    set("siren-volume-num",  this._config?.siren_volume  ?? 0);
+    set("siren-repeat",      this._config?.siren_repeat  ?? 0);
+    set("pending-tone",      this._config?.pending_tone  || "");
+    set("pending-volume",    this._config?.pending_volume ?? 0);
+    set("pending-volume-num",this._config?.pending_volume ?? 0);
+    set("pending-repeat",    this._config?.pending_repeat ?? 0);
 
-    const sirenVol    = this._config?.siren_volume ?? 0;
-    const sirenSlider = sr.querySelector("#siren-volume");
-    const sirenNum    = sr.querySelector("#siren-volume-num");
-    if (sirenSlider) sirenSlider.value = sirenVol;
-    if (sirenNum)    sirenNum.value    = sirenVol;
+    const cm = sr.querySelector("#chime-mode");
+    if (cm) cm.checked = this._config?.chime_mode === true;
+    set("chime-tone",       this._config?.chime_tone   || "");
+    set("chime-volume",     this._config?.chime_volume ?? 0);
+    set("chime-volume-num", this._config?.chime_volume ?? 0);
 
-    const sirenRepeat = sr.querySelector("#siren-repeat");
-    if (sirenRepeat) sirenRepeat.value = this._config?.siren_repeat ?? 0;
-
-    // Pending tone / volume / repeat
-    const pendingTone = sr.querySelector("#pending-tone");
-    if (pendingTone) pendingTone.value = this._config?.pending_tone || "";
-
-    const pendingVol    = this._config?.pending_volume ?? 0;
-    const pendingSlider = sr.querySelector("#pending-volume");
-    const pendingNum    = sr.querySelector("#pending-volume-num");
-    if (pendingSlider) pendingSlider.value = pendingVol;
-    if (pendingNum)    pendingNum.value    = pendingVol;
-
-    const pendingRepeat = sr.querySelector("#pending-repeat");
-    if (pendingRepeat) pendingRepeat.value = this._config?.pending_repeat ?? 0;
+    // Chime sensor list
+    const csl = sr.querySelector("#chime-sensor-list");
+    if (csl) {
+      const chimeSel = new Set(this._config?.chime_sensors || []);
+      const all = this._binarySensors().sort((a, b) => {
+        const ao = chimeSel.has(a.entity_id), bo = chimeSel.has(b.entity_id);
+        return ao !== bo ? (ao ? -1 : 1) : (a.attributes.friendly_name || a.entity_id).localeCompare(b.attributes.friendly_name || b.entity_id);
+      });
+      if (!all.length) {
+        csl.innerHTML = `<p class="muted">No binary sensors found.</p>`;
+      } else {
+        csl.innerHTML = all.map(s => {
+          const name = s.attributes.friendly_name || s.entity_id;
+          const dc   = s.attributes.device_class || "—";
+          return `<div class="sensor-row">
+            <label class="sensor-label">
+              <input type="checkbox" class="chime-cb" value="${s.entity_id}" ${chimeSel.has(s.entity_id) ? "checked" : ""}>
+              <span class="sensor-name">${name}</span>
+            </label>
+            <span class="chip dc">${dc}</span>
+          </div>`;
+        }).join("");
+      }
+    }
   }
 
-  async _saveGeneral() {
-    const sr      = this.shadowRoot;
+  async _saveSiren() {
+    const sr = this.shadowRoot;
+    const general = {
+      code_arm_required:    this._config?.code_arm_required    ?? true,
+      trigger_time:         this._config?.trigger_time         ?? 600,
+      disarm_after_trigger: this._config?.disarm_after_trigger ?? false,
+      siren_entity:  sr.querySelector("#siren-entity")?.value || "",
+      siren_tone:    sr.querySelector("#siren-tone")?.value.trim()    || "",
+      siren_volume:  parseFloat(sr.querySelector("#siren-volume-num")?.value  || "0"),
+      siren_repeat:  parseInt(sr.querySelector("#siren-repeat")?.value        || "0", 10),
+      pending_tone:  sr.querySelector("#pending-tone")?.value.trim()  || "",
+      pending_volume:parseFloat(sr.querySelector("#pending-volume-num")?.value|| "0"),
+      pending_repeat:parseInt(sr.querySelector("#pending-repeat")?.value      || "0", 10),
+    };
+    const chime = {
+      chime_mode:    sr.querySelector("#chime-mode")?.checked ?? false,
+      chime_sensors: [...sr.querySelectorAll(".chime-cb:checked")].map(cb => cb.value),
+      chime_tone:    sr.querySelector("#chime-tone")?.value.trim() || "",
+      chime_volume:  parseFloat(sr.querySelector("#chime-volume-num")?.value || "0"),
+    };
+    await Promise.all([
+      this._api("POST", "general", general),
+      this._api("POST", "chime",   chime),
+    ]);
+    if (this._config) Object.assign(this._config, general, chime);
+    this._toast("Siren & chime saved ✓");
+  }
+
+  // ── Settings tab ──────────────────────────────────────────────────────────
+
+  _renderSettings() {
+    const sr = this.shadowRoot;
+    const set = (id, v) => { const el = sr.querySelector(`#${id}`); if (el) el.checked = v; };
+    set("arm-req",              this._config?.code_arm_required    !== false);
+    set("disarm-after-trigger", this._config?.disarm_after_trigger === true);
+    const tt = sr.querySelector("#trigger-time");
+    if (tt) tt.value = this._config?.trigger_time ?? 600;
+  }
+
+  async _saveSettings() {
+    const sr = this.shadowRoot;
     const payload = {
-      code_arm_required:    sr.querySelector("#arm-req")?.checked ?? true,
+      code_arm_required:    sr.querySelector("#arm-req")?.checked             ?? true,
       trigger_time:         parseInt(sr.querySelector("#trigger-time")?.value || "600", 10),
       disarm_after_trigger: sr.querySelector("#disarm-after-trigger")?.checked ?? false,
-      siren_entity:         sr.querySelector("#siren-entity")?.value || "",
-      siren_tone:           sr.querySelector("#siren-tone")?.value.trim() || "",
-      siren_volume:         parseFloat(sr.querySelector("#siren-volume-num")?.value || "0"),
-      siren_repeat:         parseInt(sr.querySelector("#siren-repeat")?.value || "0", 10),
-      pending_tone:         sr.querySelector("#pending-tone")?.value.trim() || "",
-      pending_volume:       parseFloat(sr.querySelector("#pending-volume-num")?.value || "0"),
-      pending_repeat:       parseInt(sr.querySelector("#pending-repeat")?.value || "0", 10),
+      siren_entity:         this._config?.siren_entity   ?? "",
+      siren_tone:           this._config?.siren_tone     ?? "",
+      siren_volume:         this._config?.siren_volume   ?? 0,
+      siren_repeat:         this._config?.siren_repeat   ?? 0,
+      pending_tone:         this._config?.pending_tone   ?? "",
+      pending_volume:       this._config?.pending_volume ?? 0,
+      pending_repeat:       this._config?.pending_repeat ?? 0,
     };
     await this._api("POST", "general", payload);
     if (this._config) Object.assign(this._config, payload);
-    this._toast("Saved ✓");
+    this._toast("Settings saved ✓");
   }
 
   // ── Toast ─────────────────────────────────────────────────────────────────
@@ -945,214 +883,341 @@ class HaAlarmPanel extends HTMLElement {
   }
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ── Styles ─────────────────────────────────────────────────────────────────
 
 const CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
 :host{display:block}
-.panel{
-  max-width:860px;margin:0 auto;padding:20px 16px;
-  font-family:var(--paper-font-body1_-_font-family,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif);
-  color:var(--primary-text-color,#e8e8e8);
-  font-size:14px;
-}
+
+/* ── Header ── */
 .app-header{
-  position:sticky;top:0;z-index:4;
+  position:sticky;top:0;z-index:5;
   display:flex;align-items:center;gap:4px;
   padding:0 16px 0 4px;height:56px;
   background:var(--app-header-background-color,var(--primary-color,#03a9f4));
   color:var(--app-header-text-color,#fff);
-  box-shadow:0 2px 4px rgba(0,0,0,.14),0 1px 10px rgba(0,0,0,.12),0 2px 4px rgba(0,0,0,.2);
+  box-shadow:0 2px 4px rgba(0,0,0,.14),0 1px 10px rgba(0,0,0,.12);
 }
-.header-title{flex:1;font-size:20px;font-weight:400;color:var(--app-header-text-color,#fff)}
-.badge{padding:3px 12px;border-radius:12px;font-size:12px;font-weight:500}
+.header-title{flex:1;font-size:20px;font-weight:400}
+.badge{padding:3px 12px;border-radius:12px;font-size:12px;font-weight:500;flex-shrink:0}
 .badge.disarmed {background:#4caf5022;color:#4caf50}
 .badge.armed    {background:#2196f322;color:#2196f3}
 .badge.triggered{background:#f4433622;color:#f44336}
 .badge.pending  {background:#ff980022;color:#ff9800}
 
+/* ── Tab bar ── */
+.tab-bar{
+  position:sticky;top:56px;z-index:4;
+  display:flex;overflow-x:auto;scrollbar-width:none;
+  background:var(--card-background-color,#1c1e26);
+  border-bottom:2px solid var(--divider-color,#383c4a);
+  padding:0 8px;
+}
+.tab-bar::-webkit-scrollbar{display:none}
+.tab-btn{
+  flex-shrink:0;
+  padding:0 18px;height:48px;
+  background:transparent;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;
+  color:var(--secondary-text-color,#9095a5);
+  font-size:14px;font-family:inherit;cursor:pointer;
+  transition:color .15s;
+}
+.tab-btn:hover{color:var(--primary-text-color,#e8e8e8)}
+.tab-btn.active{
+  color:var(--primary-color,#03a9f4);
+  border-bottom-color:var(--primary-color,#03a9f4);
+  font-weight:500;
+}
+
+/* ── Panel ── */
+.panel{
+  max-width:740px;margin:0 auto;
+  padding:24px 16px 80px;
+  font-family:var(--paper-font-body1_-_font-family,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif);
+  color:var(--primary-text-color,#e8e8e8);
+  font-size:14px;
+}
+.tab-pane{}
+.gone{display:none!important}
+
+/* ── Open-sensor warning ── */
 .open-warning{
   display:flex;align-items:flex-start;gap:10px;
-  background:#f4433618;border:1px solid #f4433640;
-  border-radius:10px;padding:12px 16px;margin-bottom:14px;
+  background:#f4433612;border:1px solid #f4433640;
+  border-radius:10px;padding:12px 16px;margin-bottom:18px;
   font-size:13px;line-height:1.5;
 }
 .warn-icon{font-size:18px;flex-shrink:0;margin-top:1px}
-.warn-title{font-weight:500;color:#f44336;margin-bottom:2px}
+.warn-title{font-weight:600;color:#f44336;margin-bottom:2px}
 .warn-detail{color:var(--primary-text-color,#e8e8e8)}
-.warn-mode{font-weight:500;color:var(--secondary-text-color,#9095a5)}
 
-.card{
-  background:var(--card-background-color,#1c1e26);
+/* ── Mode bar ── */
+.mode-bar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.mode-btn{
+  padding:6px 18px;border-radius:20px;
   border:1px solid var(--divider-color,#383c4a);
-  border-radius:12px;margin-bottom:12px;overflow:hidden
-}
-.card-header{
-  display:flex;justify-content:space-between;align-items:center;
-  padding:15px 20px;cursor:pointer;font-size:15px;font-weight:500;
-  user-select:none;
-}
-.card-header:hover{background:var(--secondary-background-color,#1e2028)}
-.card-body{padding:4px 20px 20px}
-.card-body.closed{display:none}
-.chevron{font-size:16px;color:var(--secondary-text-color,#9095a5)}
-
-.tabs{display:flex;flex-wrap:wrap;gap:6px;padding-top:12px;margin-bottom:14px}
-.tab{
-  padding:5px 14px;border-radius:16px;border:1px solid var(--divider-color,#383c4a);
   background:transparent;color:var(--secondary-text-color,#9095a5);
-  cursor:pointer;font-size:13px;font-family:inherit
+  cursor:pointer;font-size:13px;font-family:inherit;transition:all .15s;
 }
-.tab.active{background:var(--primary-color,#03a9f4);color:#fff;border-color:transparent}
+.mode-btn:hover{border-color:var(--primary-color,#03a9f4);color:var(--primary-text-color,#e8e8e8)}
+.mode-btn.active{background:var(--primary-color,#03a9f4);color:#fff;border-color:transparent}
 
-.sensor-list{max-height:320px;overflow-y:auto;padding-right:4px}
-.group-label{
+/* ── Selected chips strip ── */
+.selected-chips{
+  display:flex;flex-wrap:wrap;gap:6px;
+  min-height:30px;margin-bottom:16px;align-items:center;
+}
+.chips-empty{font-size:12px;color:var(--secondary-text-color,#9095a5)}
+.sel-chip{
+  display:inline-flex;align-items:center;gap:4px;
+  background:var(--primary-color,#03a9f4)18;
+  border:1px solid var(--primary-color,#03a9f4)44;
+  color:var(--primary-text-color,#e8e8e8);
+  padding:3px 6px 3px 10px;border-radius:20px;font-size:12px;white-space:nowrap;
+}
+.sel-chip.open    {background:#f4433618;border-color:#f4433640}
+.sel-chip.bypassed{background:#ff980018;border-color:#ff980040}
+.chip-x{
+  background:none;border:none;color:var(--secondary-text-color,#9095a5);
+  cursor:pointer;font-size:15px;padding:0 2px;line-height:1;
+}
+.chip-x:hover{color:#f44336}
+
+/* ── Sensor rows ── */
+.group-hdr{
   font-size:11px;text-transform:uppercase;letter-spacing:.6px;
-  color:var(--secondary-text-color,#9095a5);padding:10px 0 4px;
-  cursor:pointer;user-select:none
+  color:var(--secondary-text-color,#9095a5);padding:10px 0 6px;
+  background:none;border:none;width:100%;text-align:left;font-family:inherit;
+  display:flex;justify-content:space-between;cursor:pointer;
 }
 .sensor-row{
-  display:flex;align-items:center;gap:8px;padding:7px 0;
-  border-bottom:1px solid var(--divider-color,#383c4a22);cursor:pointer
+  display:flex;align-items:center;flex-wrap:wrap;gap:8px;
+  padding:9px 0;
+  border-bottom:1px solid var(--divider-color,#383c4a18);
 }
-.sensor-row:hover{opacity:.85}
-.s-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.chip{
-  font-size:11px;background:var(--secondary-background-color,#1e2028);
-  padding:2px 8px;border-radius:8px;white-space:nowrap;
-  color:var(--secondary-text-color,#9095a5)
-}
-.chip.primary{background:var(--primary-color,#03a9f4)22;color:var(--primary-color,#03a9f4)}
-.chip.warn{background:#ff980022;color:#ff9800}
-.chip.danger{background:#f4433622;color:#f44336}
-.sensor-open{background:#f4433618;border-radius:4px}
+.sensor-row.s-open    {background:#f4433608;border-radius:6px;padding:9px 8px;margin:0 -8px}
+.sensor-row.s-bypassed{background:#ff980008;border-radius:6px;padding:9px 8px;margin:0 -8px}
+.sensor-label{display:flex;align-items:center;gap:8px;flex:1;min-width:0;cursor:pointer}
+.sensor-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip{font-size:11px;padding:2px 9px;border-radius:10px;white-space:nowrap;flex-shrink:0}
+.chip.dc     {background:var(--secondary-background-color,#1e2028);color:var(--secondary-text-color,#9095a5)}
+.chip.danger {background:#f4433622;color:#f44336}
+.chip.warn   {background:#ff980022;color:#ff9800}
 
-.dtable{width:100%;border-collapse:collapse;margin-top:12px}
-.dtable th{
-  text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;
-  letter-spacing:.5px;color:var(--secondary-text-color,#9095a5)
-}
-.dtable td{padding:7px 8px;border-bottom:1px solid var(--divider-color,#383c4a22)}
-.mode-cell{font-size:14px;width:120px}
-.num{
-  width:80px;background:var(--secondary-background-color,#1e2028);
+/* ── Bypass controls ── */
+.bypass-add{
+  padding:3px 10px;border-radius:12px;
   border:1px solid var(--divider-color,#383c4a);
-  color:var(--primary-text-color,#e8e8e8);
-  padding:5px 8px;border-radius:6px;font-size:13px;font-family:inherit
+  background:transparent;color:var(--secondary-text-color,#9095a5);
+  cursor:pointer;font-size:11px;font-family:inherit;white-space:nowrap;flex-shrink:0;
+}
+.bypass-add:hover,.bypass-add.active{border-color:#ff9800;color:#ff9800;background:#ff980010}
+.bypass-clear{
+  padding:3px 10px;border-radius:12px;
+  border:1px solid #ff980040;background:#ff980018;color:#ff9800;
+  cursor:pointer;font-size:11px;font-family:inherit;white-space:nowrap;flex-shrink:0;
+}
+.bypass-clear:hover{background:#ff980030}
+.bypass-picker{
+  flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;padding:8px 0 4px;
+  animation:slideDown .12s ease;
+}
+@keyframes slideDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.byp-dur{
+  padding:5px 14px;border-radius:14px;
+  border:1px solid #ff980050;background:transparent;color:#ff9800;
+  cursor:pointer;font-size:12px;font-family:inherit;
+}
+.byp-dur:hover{background:#ff980020}
+.byp-cancel{
+  background:none;border:none;color:var(--secondary-text-color,#9095a5);
+  cursor:pointer;font-size:18px;padding:0 4px;line-height:1;
 }
 
-.user-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--divider-color,#383c4a22)}
-.user-name{flex:1;font-size:14px}
-.divider{border-top:1px solid var(--divider-color,#383c4a);margin:16px 0}
-.sub-heading{font-size:13px;font-weight:500;margin-bottom:10px;color:var(--secondary-text-color,#9095a5)}
-
-.svc-list{
-  max-height:200px;overflow-y:auto;
+/* ── Delays grid ── */
+.delays-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.delay-card{
+  background:var(--card-background-color,#1c1e26);
   border:1px solid var(--divider-color,#383c4a);
-  border-radius:6px;padding:2px 8px;margin-top:4px
+  border-radius:12px;padding:16px;
 }
-.svc-row{
-  display:flex;align-items:center;gap:8px;padding:7px 0;cursor:pointer;font-size:13px;
-  border-bottom:1px solid var(--divider-color,#383c4a22)
-}
-.svc-row:last-child{border-bottom:none}
-.svc-name{flex:1;text-transform:capitalize}
+.delay-mode{font-weight:600;font-size:15px;margin-bottom:14px}
+.delay-fields{display:flex;flex-direction:column;gap:10px}
+.delay-field{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.delay-field label{color:var(--secondary-text-color,#9095a5);font-size:13px}
 
-.sel-input{
-  flex:1;background:var(--secondary-background-color,#1e2028);
+/* ── Users ── */
+.user-cards{display:flex;flex-direction:column;gap:8px;margin-bottom:4px}
+.user-card{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--card-background-color,#1c1e26);
   border:1px solid var(--divider-color,#383c4a);
-  color:var(--primary-text-color,#e8e8e8);
-  padding:7px 10px;border-radius:6px;font-size:13px;font-family:inherit;
-  min-width:0
+  border-radius:10px;padding:12px 16px;
 }
+.user-meta{display:flex;align-items:center;gap:10px}
+.user-name{font-size:14px;font-weight:500}
+.role-chip{
+  font-size:11px;padding:2px 9px;border-radius:10px;
+  background:var(--primary-color,#03a9f4)22;color:var(--primary-color,#03a9f4);
+}
+.role-chip.user{background:var(--secondary-background-color,#1e2028);color:var(--secondary-text-color,#9095a5)}
 
-.field-row{display:flex;align-items:flex-start;gap:12px;margin-bottom:10px}
-.field-row label{width:100px;flex-shrink:0;padding-top:7px;color:var(--secondary-text-color,#9095a5)}
-.field-row input[type=text],
-.field-row input[type=password]{
-  flex:1;background:var(--secondary-background-color,#1e2028);
+/* ── Notifications ── */
+.svc-grid{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.svc-card{
+  display:flex;align-items:center;gap:10px;
+  background:var(--card-background-color,#1c1e26);
   border:1px solid var(--divider-color,#383c4a);
-  color:var(--primary-text-color,#e8e8e8);
-  padding:7px 10px;border-radius:6px;font-size:13px;font-family:inherit
+  border-radius:10px;padding:11px 14px;cursor:pointer;
+  transition:border-color .15s,background .15s;
 }
+.svc-card.on{border-color:var(--primary-color,#03a9f4)66;background:var(--primary-color,#03a9f4)0c}
+.svc-name{flex:1;font-size:14px}
+.svc-id{font-size:11px;color:var(--secondary-text-color,#9095a5);font-family:monospace}
 
-/* Volume row — slider + number input */
-.vol-row{align-items:center}
-.vol-row input[type=range]{
-  flex:1;accent-color:var(--primary-color,#03a9f4);
-  height:4px;cursor:pointer;min-width:0
-}
-.vol-num{
-  width:68px;flex-shrink:0;
-  background:var(--secondary-background-color,#1e2028);
+.event-table{display:flex;flex-direction:column;gap:6px}
+.event-row{
+  display:flex;align-items:center;gap:10px;
+  background:var(--card-background-color,#1c1e26);
   border:1px solid var(--divider-color,#383c4a);
-  color:var(--primary-text-color,#e8e8e8);
-  padding:5px 8px;border-radius:6px;font-size:13px;font-family:inherit;
-  text-align:right;
+  border-radius:10px;padding:10px 14px;
 }
-
-.event-blocks{display:flex;flex-direction:column;gap:6px;margin:4px 0 14px}
-.event-block{border:1px solid var(--divider-color,#383c4a);border-radius:8px;padding:10px 12px}
-.event-block-header{display:flex;align-items:center;gap:8px;cursor:pointer}
-.event-label{font-size:13px;flex:1}
-.event-msg-row{margin-top:8px;padding-left:24px}
+.event-check{display:flex;align-items:center;gap:8px;cursor:pointer;flex-shrink:0}
+.event-lbl{font-size:13px;min-width:130px}
 .ev-msg{
-  width:100%;
+  flex:1;
   background:var(--secondary-background-color,#1e2028);
   border:1px solid var(--divider-color,#383c4a);
   color:var(--primary-text-color,#e8e8e8);
   padding:6px 10px;border-radius:6px;font-size:12px;font-family:inherit;
 }
-.ev-msg::placeholder{color:var(--secondary-text-color,#9095a5)}
+.ev-msg::placeholder{color:var(--secondary-text-color,#9095a5);font-style:italic}
 
-.toggle-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:8px 0}
-.toggle-label{font-size:14px;margin-bottom:3px}
-
-.row-end{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:14px}
-.btn{
-  background:var(--primary-color,#03a9f4);color:#fff;
-  border:none;padding:8px 20px;border-radius:6px;
-  cursor:pointer;font-size:13px;font-family:inherit
+/* ── Form cards (Siren, Settings, Users add form) ── */
+.form-card{
+  background:var(--card-background-color,#1c1e26);
+  border:1px solid var(--divider-color,#383c4a);
+  border-radius:12px;padding:18px;
+  display:flex;flex-direction:column;gap:14px;
 }
-.btn:hover{opacity:.88}
-.btn.secondary{
-  background:transparent;
-  border:1px solid var(--primary-color,#03a9f4);
-  color:var(--primary-color,#03a9f4)
+.form-row{display:flex;align-items:center;gap:12px}
+.form-row>label:first-child{
+  width:120px;flex-shrink:0;
+  color:var(--secondary-text-color,#9095a5);font-size:13px;
 }
-.btn.secondary:hover{background:color-mix(in srgb,var(--primary-color,#03a9f4) 12%,transparent)}
-.btn-ghost{
-  background:transparent;border:1px solid;
-  padding:4px 10px;border-radius:6px;
-  cursor:pointer;font-size:12px;font-family:inherit
-}
-.btn-ghost.danger{border-color:var(--error-color,#f44336);color:var(--error-color,#f44336)}
-.btn-ghost.danger:hover{background:#f4433612}
-
-.muted{color:var(--secondary-text-color,#9095a5)}
-.summary-group{margin-bottom:16px}
-.summary-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.summary-chip{
-  display:inline-flex;align-items:center;gap:5px;
-  font-size:12px;font-family:inherit;
+.form-row input[type=text],
+.form-row input[type=password]{
+  flex:1;
   background:var(--secondary-background-color,#1e2028);
   border:1px solid var(--divider-color,#383c4a);
   color:var(--primary-text-color,#e8e8e8);
-  padding:3px 8px;border-radius:8px;white-space:nowrap;cursor:pointer;
+  padding:7px 10px;border-radius:7px;font-size:13px;font-family:inherit;
 }
-.summary-chip:hover{border-color:var(--error-color,#f44336);background:#f4433614}
-.summary-chip.danger{background:#f4433618;border-color:#f4433640;color:#f44336}
-.chip-x{font-size:14px;line-height:1;color:var(--secondary-text-color,#9095a5)}
-.summary-chip:hover .chip-x{color:var(--error-color,#f44336)}
-.small{font-size:12px;margin-top:3px}
-.gone{display:none}
+.sel{
+  flex:1;
+  background:var(--secondary-background-color,#1e2028);
+  border:1px solid var(--divider-color,#383c4a);
+  color:var(--primary-text-color,#e8e8e8);
+  padding:7px 10px;border-radius:7px;font-size:13px;font-family:inherit;
+}
 
+/* ── Settings rows ── */
+.settings-stack{display:flex;flex-direction:column}
+.setting-row{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:16px 0;border-bottom:1px solid var(--divider-color,#383c4a22);
+}
+.setting-row:last-child{border-bottom:none}
+.setting-text{flex:1}
+.setting-title{font-size:14px;font-weight:500;margin-bottom:3px}
+.setting-sub{font-size:12px;color:var(--secondary-text-color,#9095a5)}
+
+/* ── Toggle switch ── */
+.sw{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer}
+.sw input{opacity:0;width:0;height:0;position:absolute}
+.sw-track{
+  position:absolute;inset:0;background:var(--divider-color,#383c4a);
+  border-radius:12px;transition:background .2s;
+}
+.sw-track::after{
+  content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;
+  background:#fff;border-radius:50%;transition:transform .2s;
+  box-shadow:0 1px 3px rgba(0,0,0,.3);
+}
+.sw input:checked+.sw-track{background:var(--primary-color,#03a9f4)}
+.sw input:checked+.sw-track::after{transform:translateX(20px)}
+
+/* ── Volume ── */
+.vol-wrap{display:flex;align-items:center;gap:10px;flex:1}
+.vol-wrap input[type=range]{flex:1;accent-color:var(--primary-color,#03a9f4);cursor:pointer}
+.vol-num{
+  width:64px;
+  background:var(--secondary-background-color,#1e2028);
+  border:1px solid var(--divider-color,#383c4a);
+  color:var(--primary-text-color,#e8e8e8);
+  padding:5px 8px;border-radius:6px;font-size:13px;font-family:inherit;text-align:right;
+}
+
+/* ── Misc inputs ── */
+.inline-wrap{display:flex;align-items:center;gap:8px}
+.short-num{
+  width:80px;
+  background:var(--secondary-background-color,#1e2028);
+  border:1px solid var(--divider-color,#383c4a);
+  color:var(--primary-text-color,#e8e8e8);
+  padding:6px 8px;border-radius:6px;font-size:13px;font-family:inherit;
+}
+.hint-inline{font-size:12px;color:var(--secondary-text-color,#9095a5)}
+.field-label{font-size:12px;color:var(--secondary-text-color,#9095a5);margin-bottom:8px}
+
+.chime-sensor-list{max-height:220px;overflow-y:auto;padding-right:4px}
+
+/* ── Section labels & dividers ── */
+.sec-label{
+  font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--secondary-text-color,#9095a5);margin-bottom:10px;
+}
+.ruled-divider{
+  display:flex;align-items:center;gap:12px;
+  margin:20px 0 16px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--secondary-text-color,#9095a5);
+}
+.ruled-divider::before,.ruled-divider::after{content:"";flex:1;border-top:1px solid var(--divider-color,#383c4a)}
+
+/* ── Buttons ── */
+.pane-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:24px}
+.btn{
+  background:var(--primary-color,#03a9f4);color:#fff;
+  border:none;padding:9px 22px;border-radius:8px;
+  cursor:pointer;font-size:13px;font-family:inherit;font-weight:500;
+}
+.btn:hover{opacity:.88}
+.btn.outline{
+  background:transparent;
+  border:1px solid var(--primary-color,#03a9f4);
+  color:var(--primary-color,#03a9f4);
+}
+.btn.outline:hover{background:var(--primary-color,#03a9f4)14}
+.icon-btn{
+  width:32px;height:32px;border-radius:8px;
+  background:none;border:none;cursor:pointer;font-size:15px;
+  display:flex;align-items:center;justify-content:center;
+}
+.icon-btn.danger{color:var(--error-color,#f44336)}
+.icon-btn.danger:hover{background:#f4433614}
+
+/* ── Utility ── */
+.muted{color:var(--secondary-text-color,#9095a5)}
+.hint{font-size:12px;color:var(--secondary-text-color,#9095a5)}
+code{background:var(--secondary-background-color,#1e2028);padding:1px 5px;border-radius:4px;font-size:11px}
+
+/* ── Toast ── */
 .toast{
   position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
   background:#323232;color:#fff;
   padding:10px 24px;border-radius:8px;font-size:13px;
-  z-index:9999;box-shadow:0 4px 16px #0005;
-  transition:opacity .25s;
+  z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.3);
+  pointer-events:none;
 }
 .toast.err{background:var(--error-color,#f44336)}
 `;
