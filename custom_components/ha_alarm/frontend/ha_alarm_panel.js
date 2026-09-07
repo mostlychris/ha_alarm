@@ -416,8 +416,8 @@ class HaAlarmPanel extends HTMLElement {
       const open  = state?.state === "on";
       const byp   = bypassed[id] !== undefined;
       return `<span class="sel-chip${open ? " open" : byp ? " bypassed" : ""}" title="${id}">
-        ${name}
-        <button class="chip-x" data-id="${id}">×</button>
+        <span class="chip-name">${name}</span>
+        <button class="chip-x" data-id="${id}" title="Remove">✕</button>
       </span>`;
     }).join("");
     el.querySelectorAll(".chip-x").forEach(btn => {
@@ -976,23 +976,30 @@ const CSS = `
 /* ── Selected chips strip ── */
 .selected-chips{
   display:flex;flex-wrap:wrap;gap:6px;
-  min-height:30px;margin-bottom:16px;align-items:center;
+  min-height:34px;margin-bottom:16px;align-items:center;
 }
 .chips-empty{font-size:12px;color:var(--secondary-text-color,#9095a5)}
 .sel-chip{
-  display:inline-flex;align-items:center;gap:4px;
-  background:var(--primary-color,#03a9f4)18;
-  border:1px solid var(--primary-color,#03a9f4)44;
+  display:inline-flex;align-items:stretch;
+  background:var(--primary-color,#03a9f4)28;
+  border:1px solid var(--primary-color,#03a9f4)70;
   color:var(--primary-text-color,#e8e8e8);
-  padding:3px 6px 3px 10px;border-radius:20px;font-size:12px;white-space:nowrap;
+  border-radius:8px;font-size:13px;font-weight:500;
+  white-space:nowrap;overflow:hidden;
 }
-.sel-chip.open    {background:#f4433618;border-color:#f4433640}
-.sel-chip.bypassed{background:#ff980018;border-color:#ff980040}
+.chip-name{padding:7px 8px 7px 12px}
+.sel-chip.open    {background:#f4433628;border-color:#f4433670}
+.sel-chip.bypassed{background:#ff980028;border-color:#ff980070}
 .chip-x{
-  background:none;border:none;color:var(--secondary-text-color,#9095a5);
-  cursor:pointer;font-size:15px;padding:0 2px;line-height:1;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;border:none;
+  border-left:1px solid var(--divider-color,#383c4a);
+  color:var(--secondary-text-color,#9095a5);
+  cursor:pointer;font-size:15px;
+  min-width:36px;padding:0;margin:0;
+  transition:background .15s,color .15s;font-family:inherit;
 }
-.chip-x:hover{color:#f44336}
+.chip-x:hover{background:#f4433622;color:#f44336}
 
 /* ── Sensor picker section ── */
 .sensor-picker-hdr{
