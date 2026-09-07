@@ -115,9 +115,14 @@ class HaAlarmPanel extends HTMLElement {
     <div class="mode-bar" id="mode-tabs">
       ${MODES.map((m, i) => `<button class="mode-btn${i === 0 ? " active" : ""}" data-mode="${m.key}">${m.label}</button>`).join("")}
     </div>
-    <div id="selected-chips" class="selected-chips"></div>
-    <p class="sensor-picker-hdr">Add sensors</p>
-    <div id="sensor-list"></div>
+    <div class="sensor-section-box">
+      <p class="sensor-section-title">Selected sensors for this mode</p>
+      <div id="selected-chips" class="selected-chips"></div>
+    </div>
+    <div class="sensor-section-box">
+      <p class="sensor-section-title">Add sensors</p>
+      <div id="sensor-list"></div>
+    </div>
     <div class="pane-footer">
       <button class="btn" id="save-sensors">Save sensors for this mode</button>
     </div>
@@ -973,44 +978,50 @@ const CSS = `
 .mode-btn:hover{border-color:var(--primary-color,#03a9f4);color:var(--primary-text-color,#e8e8e8)}
 .mode-btn.active{background:var(--primary-color,#03a9f4);color:#fff;border-color:transparent}
 
+/* ── Sensor section boxes ── */
+.sensor-section-box{
+  border:1px solid var(--divider-color,#383c4a);
+  border-radius:8px;margin-bottom:14px;overflow:hidden;
+}
+.sensor-section-title{
+  font-size:11px;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--secondary-text-color,#9095a5);
+  margin:0;padding:10px 12px 0;
+}
+
 /* ── Selected chips strip ── */
 .selected-chips{
   display:flex;flex-wrap:wrap;gap:6px;
-  min-height:34px;margin-bottom:16px;align-items:center;
+  min-height:34px;align-items:center;
+  padding:8px 12px 12px;
 }
 .chips-empty{font-size:12px;color:var(--secondary-text-color,#9095a5)}
 .sel-chip{
   display:inline-flex;align-items:stretch;
-  background:var(--primary-color,#03a9f4)28;
-  border:1px solid var(--primary-color,#03a9f4)70;
+  background:var(--secondary-background-color,#1e2028);
+  border:1px solid var(--primary-color,#03a9f4);
   color:var(--primary-text-color,#e8e8e8);
   border-radius:8px;font-size:13px;font-weight:500;
   white-space:nowrap;overflow:hidden;
 }
 .chip-name{padding:7px 8px 7px 12px}
-.sel-chip.open    {background:#f4433628;border-color:#f4433670}
-.sel-chip.bypassed{background:#ff980028;border-color:#ff980070}
+.sel-chip.open    {border-color:#f44336}
+.sel-chip.bypassed{border-color:#ff9800}
 .chip-x{
   display:inline-flex;align-items:center;justify-content:center;
   background:transparent;border:none;
-  border-left:1px solid var(--divider-color,#383c4a);
+  border-left:1px solid var(--primary-color,#03a9f4);
   color:var(--secondary-text-color,#9095a5);
   cursor:pointer;font-size:15px;
   min-width:36px;padding:0;margin:0;
   transition:background .15s,color .15s;font-family:inherit;
 }
+.sel-chip.open .chip-x   {border-left-color:#f44336}
+.sel-chip.bypassed .chip-x{border-left-color:#ff9800}
 .chip-x:hover{background:#f4433622;color:#f44336}
 
-/* ── Sensor picker section ── */
-.sensor-picker-hdr{
-  font-size:11px;text-transform:uppercase;letter-spacing:.6px;
-  color:var(--secondary-text-color,#9095a5);
-  margin:0 0 6px;padding:0;
-}
-#sensor-list{
-  border:1px solid var(--divider-color,#383c4a);
-  border-radius:8px;padding:0 12px;margin-bottom:16px;
-}
+/* ── Sensor picker list ── */
+#sensor-list{padding:0 12px}
 
 /* ── Sensor rows ── */
 .group-hdr{
