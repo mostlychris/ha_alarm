@@ -116,6 +116,7 @@ class HaAlarmPanel extends HTMLElement {
       ${MODES.map((m, i) => `<button class="mode-btn${i === 0 ? " active" : ""}" data-mode="${m.key}">${m.label}</button>`).join("")}
     </div>
     <div id="selected-chips" class="selected-chips"></div>
+    <p class="sensor-picker-hdr">Add sensors</p>
     <div id="sensor-list"></div>
     <div class="pane-footer">
       <button class="btn" id="save-sensors">Save sensors for this mode</button>
@@ -443,13 +444,15 @@ class HaAlarmPanel extends HTMLElement {
     const suggested = classes ? all.filter(s => classes.includes(s.attributes.device_class)) : all;
     const others    = classes ? all.filter(s => !classes.includes(s.attributes.device_class)) : [];
 
+    // Only show sensors not yet selected — selected ones are displayed as chips above
+    const suggestedUnselected = suggested.filter(s => !selected.has(s.entity_id));
+    const othersUnselected    = others.filter(s => !selected.has(s.entity_id));
+
     const isOpen = s => this._hass.states[s.entity_id]?.state === "on";
     const sortGroup = arr => arr.slice().sort((a, b) => {
-      const asel = selected.has(a.entity_id), bsel = selected.has(b.entity_id);
       const aopn = isOpen(a), bopn = isOpen(b);
-      const arank = asel && aopn ? 0 : asel ? 1 : aopn ? 2 : 3;
-      const brank = bsel && bopn ? 0 : bsel ? 1 : bopn ? 2 : 3;
-      return arank !== brank ? arank - brank : (a.attributes.friendly_name || a.entity_id).localeCompare(b.attributes.friendly_name || b.entity_id);
+      if (aopn !== bopn) return aopn ? -1 : 1;
+      return (a.attributes.friendly_name || a.entity_id).localeCompare(b.attributes.friendly_name || b.entity_id);
     });
 
     const bypassLabel = until => {
@@ -500,12 +503,12 @@ class HaAlarmPanel extends HTMLElement {
     };
 
     let html = "";
-    const sortedMain = sortGroup(suggested);
+    const sortedMain = sortGroup(suggestedUnselected);
     if (sortedMain.length) {
-      html += `<p class="group-hdr">${classes ? "Suggested sensors" : "All sensors"}</p>`;
+      html += `<p class="group-hdr">${classes ? "Suggested for this mode" : "All sensors"}</p>`;
       html += sortedMain.map(row).join("");
     }
-    const sortedOthers = sortGroup(others);
+    const sortedOthers = sortGroup(othersUnselected);
     if (sortedOthers.length) {
       const show = this._showOthers[this._activeMode];
       html += `<button class="group-hdr toggle-others" data-mode="${this._activeMode}">
@@ -513,7 +516,11 @@ class HaAlarmPanel extends HTMLElement {
       </button>`;
       if (show) html += sortedOthers.map(row).join("");
     }
-    if (!html) html = `<p class="muted">No binary sensors found in Home Assistant.</p>`;
+    if (!html) {
+      html = all.length
+        ? `<p class="muted" style="padding:10px 0">All sensors for this mode are already selected.</p>`
+        : `<p class="muted" style="padding:10px 0">No binary sensors found in Home Assistant.</p>`;
+    }
 
     container.innerHTML = html;
 
@@ -525,9 +532,11 @@ class HaAlarmPanel extends HTMLElement {
     );
     container.querySelectorAll(".s-cb").forEach(cb =>
       cb.addEventListener("change", () => {
-        this._pendingSensors[this._activeMode] = new Set(
-          [...container.querySelectorAll(".s-cb:checked")].map(c => c.value)
-        );
+        const pending = new Set(this._pendingSensors[this._activeMode] ?? (this._config?.sensors?.[this._activeMode] || []));
+        if (cb.checked) pending.add(cb.value);
+        else pending.delete(cb.value);
+        this._pendingSensors[this._activeMode] = pending;
+        this._renderSensors();
         this._renderSelectedChips();
       })
     );
@@ -567,10 +576,12 @@ class HaAlarmPanel extends HTMLElement {
 
   async _saveSensors() {
     const sensors = { ...(this._config?.sensors || {}) };
-    sensors[this._activeMode] = [...this.shadowRoot.querySelectorAll(".s-cb:checked")].map(cb => cb.value);
+    const sel = this._pendingSensors[this._activeMode] ?? new Set(this._config?.sensors?.[this._activeMode] || []);
+    sensors[this._activeMode] = [...sel];
     await this._api("POST", "sensors", sensors);
     if (this._config) this._config.sensors = sensors;
     delete this._pendingSensors[this._activeMode];
+    this._renderSensors();
     this._renderSelectedChips();
     this._toast("Sensors saved ✓");
   }
@@ -982,6 +993,17 @@ const CSS = `
   cursor:pointer;font-size:15px;padding:0 2px;line-height:1;
 }
 .chip-x:hover{color:#f44336}
+
+/* ── Sensor picker section ── */
+.sensor-picker-hdr{
+  font-size:11px;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--secondary-text-color,#9095a5);
+  margin:0 0 6px;padding:0;
+}
+#sensor-list{
+  border:1px solid var(--divider-color,#383c4a);
+  border-radius:8px;padding:0 12px;margin-bottom:16px;
+}
 
 /* ── Sensor rows ── */
 .group-hdr{
