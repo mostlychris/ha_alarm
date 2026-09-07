@@ -416,12 +416,15 @@ class HaAlarmPanel extends HTMLElement {
       return;
     }
     el.innerHTML = [...selected].map(id => {
-      const state = this._hass.states[id];
-      const name  = state?.attributes?.friendly_name || id;
-      const open  = state?.state === "on";
-      const byp   = bypassed[id] !== undefined;
-      return `<span class="sel-chip${open ? " open" : byp ? " bypassed" : ""}" title="${id}">
-        <span class="chip-name">${name}</span>
+      const state  = this._hass.states[id];
+      const stale  = !state;
+      const name   = state?.attributes?.friendly_name || id;
+      const open   = state?.state === "on";
+      const byp    = bypassed[id] !== undefined;
+      const cls    = stale ? " stale" : open ? " open" : byp ? " bypassed" : "";
+      const ttip   = stale ? `Entity not found in HA — remove and re-add: ${id}` : id;
+      return `<span class="sel-chip${cls}" title="${ttip}">
+        <span class="chip-name">${stale ? `<span class="chip-warn-icon">⚠</span> ` : ""}${name}</span>
         <button class="chip-x" data-id="${id}" title="Remove">✕</button>
       </span>`;
     }).join("");
@@ -1007,6 +1010,8 @@ const CSS = `
 .chip-name{padding:7px 8px 7px 12px}
 .sel-chip.open    {border-color:#f44336}
 .sel-chip.bypassed{border-color:#ff9800}
+.sel-chip.stale   {border-color:var(--disabled-color,#bdbdbd);opacity:.65}
+.chip-warn-icon{font-size:11px;color:#ff9800;margin-right:2px}
 .chip-x{
   display:inline-flex;align-items:center;justify-content:center;
   background:transparent;border:none;
@@ -1018,6 +1023,7 @@ const CSS = `
 }
 .sel-chip.open .chip-x   {border-left-color:#f44336}
 .sel-chip.bypassed .chip-x{border-left-color:#ff9800}
+.sel-chip.stale .chip-x  {border-left-color:var(--disabled-color,#bdbdbd)}
 .chip-x:hover{background:#f4433622;color:#f44336}
 
 /* ── Sensor picker list ── */
